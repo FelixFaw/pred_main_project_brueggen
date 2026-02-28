@@ -1,0 +1,13 @@
+[MASTER]
+jobs=0
+ignore=.venv,venv,build,dist,data
+
+[MESSAGES CONTROL]
+# häufige "Nerv-Warnungen" ausblenden
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring
+
+[FORMAT]
+max-line-length=150

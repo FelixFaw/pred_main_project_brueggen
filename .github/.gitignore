@@ -1,0 +1,27 @@
+# created by virtualenv automatically
+
+# IntelliJ / JetBrains
+../.idea/
+*.iml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# Data outputs (meist generiert)
+data/interim/
+outputs/
+logs/
