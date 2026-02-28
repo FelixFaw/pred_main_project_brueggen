@@ -23,4 +23,10 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q --allow-no-tests
+          pytest -q
+          code=$?
+          if [ $code -eq 5 ]; then
+            echo "No tests collected (exit code 5) -> not failing the build."
+            exit 0
+          fi
+          exit $code
