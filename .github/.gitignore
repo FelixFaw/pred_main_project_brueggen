@@ -22,6 +22,5 @@ dist/
 *.egg-info/
 
 # Data outputs (meist generiert)
-data/interim/
 outputs/
 logs/
