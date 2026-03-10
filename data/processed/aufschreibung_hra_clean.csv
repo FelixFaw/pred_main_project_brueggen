@@ -825,7 +825,7 @@ Datum,Wochentag,DatumNEU,KW,Schicht,Zeit von,Zeit bis,Dauer Arbeits-zeit,Anzahl 
 2023-01-26,4.0,2023-01-26 00:00:00,2023/04,n,23:00:00,1900-01-01 00:00:00,59.99999999999995,4.0,,4.0,3.0,7.0,,3.0,,,,R 06,Freitext,Suchfahrtfehler.,,R 06,R 06,,,,,suchfahrtfehler.,suchfahrtfehler.,freitext,freitext
 2023-01-26,4.0,2023-01-26 00:00:00,2023/04,n,23:00:00,1900-01-01 00:00:00,59.99999999999995,4.0,,4.0,3.0,7.0,,3.0,,,,R 07,Zündfehler,,,R 07,R 07,,,,,,,zündfehler,zündfehler
 2023-01-26,4.0,2023-01-26 00:00:00,2023/04,n,23:00:00,1900-01-01 00:00:00,59.99999999999995,4.0,,4.0,3.0,7.0,,20.0,,,,R 02,Warten auf Material,"Deckblech fallen gelassen, kommissionierer informiert, warten auf neues Deckblech.",,R 02,R 02,,,,,"deckblech fallen gelassen, kommissionierer informiert, warten auf neues deckblech.","deckblech fallen gelassen, kommissionierer informiert, warten auf neues deckblech.",warten auf material,warten auf material
-2023-01-27,5.0,2023-01-27 00:00:00,2023/04,n,00:00:00,01:00:00,59.999999999999986,4.0,,8.0,,8.0,,5.0,,,,OP 100 R,Freitext,,,OP 100 R,OP 100 R,,,,,,,freitext,freitext
+2023-01-27,5.0,2023-01-27 00:00:00,2023/04,n,00:00:00,01:00:00,59.999999999999986,4.0,,8.0,,8.0,,5.0,,,,OP 100 R,Bauteil nicht gespannt,,,OP 100 R,OP 100 R,,,,,,,freitext,freitext
 2023-01-27,5.0,2023-01-27 00:00:00,2023/04,n,00:00:00,01:00:00,59.999999999999986,4.0,,8.0,,8.0,,5.0,,,,OP 100 R,Bauteil nicht gespannt,,,OP 100 R,OP 100 R,,,,,,,bauteil nicht gespannt,bauteil nicht gespannt
 2023-01-27,5.0,2023-01-27 00:00:00,2023/04,n,00:00:00,01:00:00,59.999999999999986,4.0,,8.0,,8.0,,5.0,,,,R 02,Parallelgreifer ,,,R 02,R 02,,,,,,,parallelgreifer,parallelgreifer
 2023-01-27,5.0,2023-01-27 00:00:00,2023/04,n,01:30:00,02:00:00,29.999999999999993,4.0,,4.0,,4.0,,,,9.0,,R 07,Gasdüse und Kontaktrohr getauscht,,,"R 07, R 08, R 09",R 07,R 08,R 09,,,,,gasdüse und kontaktrohr getauscht,gasdüse und kontaktrohr getauscht
@@ -995,7 +995,7 @@ Datum,Wochentag,DatumNEU,KW,Schicht,Zeit von,Zeit bis,Dauer Arbeits-zeit,Anzahl 
 2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,00:00:00,01:00:00,59.999999999999986,3.0,,,6.0,6.0,,5.0,,,,R 06,Messfehler,,,R 06,R 06,,,,,,,messfehler,messfehler
 2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,00:00:00,01:00:00,59.999999999999986,3.0,,,6.0,6.0,,5.0,,,,R 09,Freitext,steckt in der Brennerreinigung fest,,R 09,R 09,,,,,steckt in der brennerreinigung fest,steckt in der brennerreinigung fest.,freitext,freitext
 2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,00:00:00,01:00:00,59.999999999999986,3.0,,,6.0,6.0,,10.0,,,,OP 100 L,Sensor Schaltet nicht,Schwenkspanner Mittig Links,,OP 100 L,OP 100 L,,,,,schwenkspanner mittig links,schwenkspanner mittig links,sensor schaltet nicht,sensor schaltet nicht
-2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,01:30:00,02:00:00,29.999999999999993,3.0,,,4.0,4.0,,5.0,,,,OP 100 R,,,,OP 100 R,OP 100 R,,,,,,,,
+2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,01:30:00,02:00:00,29.999999999999993,3.0,,,4.0,4.0,,5.0,,,,OP 100 R,Bauteil nicht gespannt,,,OP 100 R,OP 100 R,,,,,,,,
 2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,02:00:00,03:00:00,60.0,3.0,,,8.0,8.0,,5.0,,,,OP 100 R,Bauteil nicht gespannt,,,OP 100 R,OP 100 R,,,,,,,bauteil nicht gespannt,bauteil nicht gespannt
 2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,02:00:00,03:00:00,60.0,3.0,,,8.0,8.0,,5.0,,,,R 06,Messfehler,,,R 06,R 06,,,,,,,messfehler,messfehler
 2023-02-01,3.0,2023-02-01 00:00:00,2023/05,n,02:00:00,03:00:00,60.0,3.0,,,8.0,8.0,,5.0,,,,R 03,Greiferfehler Lattentasche,,,R 03,R 03,,,,,,,greiferfehler lattentasche,greiferfehler lattentasche
