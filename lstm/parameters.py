@@ -7,7 +7,7 @@ FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\
 # --- Training Configuration ---
 SEQ_LENGTH = 10
 BATCH_SIZE = 32
-EPOCHS = 250
+EPOCHS = 3
 LEARNING_RATE = 0.001
 TEST_SPLIT = 0.2
 
