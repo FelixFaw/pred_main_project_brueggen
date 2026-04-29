@@ -1,156 +1,313 @@
 # helping_functions.py
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+import warnings
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+
+# Importe für Modellbau und XAI
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from lime import lime_tabular
+import shap
+
 import parameters as p
-from collections import defaultdict
 
 
 def load_and_preprocess_data_all_features():
-    print(f"Lade Störliste: {p.FILE_PATH_FAULTS}")
-    df_faults = pd.read_excel(p.FILE_PATH_FAULTS, engine='openpyxl')
+    print("Lade Prozessdaten...")
 
-    print(f"Lade Prozessdaten: {p.FILE_PATH_PROCESS}")
-    df_process = pd.read_excel(p.FILE_PATH_PROCESS, engine='openpyxl')
+    file_path = p.FILE_PATH_FAULTS
 
-    # --- 1. Spaltennamen bereinigen ---
-    df_faults.columns = df_faults.columns.str.replace('\n', ' ').str.replace('\xa0', ' ').str.replace('"',
-                                                                                                      '').str.strip()
-    df_process.columns = df_process.columns.str.replace('\n', ' ').str.replace('\xa0', ' ').str.replace('"',
-                                                                                                        '').str.strip()
-
-    target_duration_clean = p.TARGET_DURATION.replace('\n', ' ').replace('\xa0', ' ').replace('"', '').strip()
-    target_station_clean = p.TARGET_STATION.replace('\n', ' ').replace('\xa0', ' ').replace('"', '').strip()
-    target_reason_clean = p.TARGET_REASON.replace('\n', ' ').replace('\xa0', ' ').replace('"', '').strip()
-
-    # --- 2. Zeitstempel für den Merge erstellen ---
-    print("Synchronisiere Zeitstempel beider Dateien...")
-    df_faults['Join_Time'] = pd.to_datetime(df_faults[p.DT_FAULTS], errors='coerce')
-
-    if p.DT_PROCESS_DATE in df_process.columns and p.DT_PROCESS_TIME in df_process.columns:
-        df_process['Join_Time'] = pd.to_datetime(
-            df_process[p.DT_PROCESS_DATE].astype(str).str.split(' ').str[0] + ' ' +
-            df_process[p.DT_PROCESS_TIME].astype(str),
-            errors='coerce'
-        )
+    if file_path.endswith('.csv'):
+        df = pd.read_csv(file_path, sep=';', encoding='utf-8')
     else:
-        df_process['Join_Time'] = pd.to_datetime(df_process[p.DT_PROCESS_DATE], errors='coerce')
+        df = pd.read_excel(file_path)
 
-    df_faults.dropna(subset=['Join_Time'], inplace=True)
-    df_process.dropna(subset=['Join_Time'], inplace=True)
-    df_faults.sort_values('Join_Time', inplace=True)
-    df_process.sort_values('Join_Time', inplace=True)
+    # ---------------------------------------------------------
+    # 1. Zielvariablen (Targets) extrahieren und BEREINIGEN
+    # ---------------------------------------------------------
+    col_failure_duration = 'Dauer Anlagen-Ausfall'
+    col_station = 'Station/ OP'
 
-    # --- 3. MERGE (Verschmelzung) ---
-    df = pd.merge_asof(df_faults, df_process, on='Join_Time', direction='backward')
-    print(f"Merge abgeschlossen. Roh-Spaltenanzahl gesamt: {len(df.columns)}")
+    print("Bereite Zielvariablen (Targets) vor...")
 
-    required_targets = [target_duration_clean, target_station_clean, target_reason_clean]
-    for target in required_targets:
-        if target not in df.columns:
-            raise KeyError(f"Spalte {target} nicht gefunden. Bitte passe den Namen in parameters.py an.")
+    # Dauer-Spalte bereinigen
+    if col_failure_duration not in df.columns:
+        df[col_failure_duration] = 0
+    else:
+        df[col_failure_duration] = pd.to_numeric(df[col_failure_duration], errors='coerce').fillna(0)
 
-    # Extrahieren von Zeit-Features
-    df['Time_Hour'] = df['Join_Time'].dt.hour
-    df['Time_DayOfWeek'] = df['Join_Time'].dt.dayofweek
+    # Station-Spalte bereinigen
+    if col_station not in df.columns:
+        df[col_station] = 'No_Station'
+    else:
+        df[col_station] = df[col_station].fillna('No_Station').astype(str)
 
-    # --- 4. Targets erstellen ---
-    df['is_failure'] = (pd.to_numeric(df[target_duration_clean], errors='coerce').fillna(0) > 0).astype(int)
+    is_failure = (df[col_failure_duration] > 0).astype(int)
 
-    df[target_station_clean] = df[target_station_clean].astype(str).replace('0', 'No_Station').replace('nan',
-                                                                                                       'No_Station')
-    df[target_reason_clean] = df[target_reason_clean].fillna('No_Error').astype(str).replace('0', 'No_Error').replace(
-        'nan', 'No_Error')
+    # Reale Dauer als Target für die Regression sichern
+    raw_durations = df[col_failure_duration].values
 
-    station_encoder = LabelEncoder()
-    reason_encoder = LabelEncoder()
-    df['station_encoded'] = station_encoder.fit_transform(df[target_station_clean])
-    df['reason_encoded'] = reason_encoder.fit_transform(df[target_reason_clean])
+    if p.DT_FAULTS in df.columns:
+        timestamps = df[p.DT_FAULTS].astype(str).values
+    elif 'Istenddat.Durchf.' in df.columns:
+        timestamps = df['Istenddat.Durchf.'].astype(str).values
+    else:
+        timestamps = np.array([f"Schritt {i}" for i in range(len(df))])
 
-    # --- 5. DYNAMISCHES FEATURE ENGINEERING (Kugelsicher) ---
-    print("Analysiere und transformiere alle verbleibenden Spalten...")
-    excluded = [
-        'is_failure', 'station_encoded', 'reason_encoded',
-        target_duration_clean, target_station_clean, target_reason_clean,
-        'Join_Time', p.DT_FAULTS, p.DT_PROCESS_DATE, p.DT_PROCESS_TIME,
-        'Datum', 'Zeit von', 'Zeit bis', 'Unnamed: 36'
+    station_le = LabelEncoder()
+    station_encoded = station_le.fit_transform(df[col_station])
+
+    # ---------------------------------------------------------
+    # 2. Relevante Features definieren
+    # ---------------------------------------------------------
+    categorical_features = [
+        'Schicht', 'Materialnummer', 'Auftrag', 'Material-Text',
+        'Arbeitsplatz', 'Systemstatus'
     ]
 
-    feature_cols = []
-    encoders = defaultdict(LabelEncoder)
-    numeric_cols_for_scaling = []
+    numeric_features = [
+        'Wochentag', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4',
+        'Menge i. O. L5', 'Menge Gesamt (Stück)', 'Dauer Org-Mangel',
+        'Dauer Anlagen-Ausfall intern', 'Dauer Logistik- Defizite',
+        'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min',
+        'Vorgangsmenge (MEINH)', 'Rückgem. Gutmenge (MEINH)',
+        'Vorgabewert 2 (VGE02)', 'Vorgabewert 3 (VGE03)'
+    ]
 
-    for col in df.columns:
-        if col in excluded:
-            continue
+    # Data Leakage verhindern
+    numeric_features = [f for f in numeric_features if f not in [col_failure_duration, col_station]]
+    categorical_features = [f for f in categorical_features if f not in [col_failure_duration, col_station]]
 
-        if pd.api.types.is_datetime64_any_dtype(df[col]):
-            continue
+    num_cols_present = [col for col in numeric_features if col in df.columns]
+    cat_cols_present = [col for col in categorical_features if col in df.columns]
 
-        # KUGELSICHERER CHECK: Ist es mathematisch als Zahl zu verstehen?
-        if pd.api.types.is_numeric_dtype(df[col]):
-            # Es ist eine saubere Zahl (Int, Float, Bool)
-            df[col] = df[col].fillna(0)
-            feature_cols.append(col)
-            numeric_cols_for_scaling.append(col)
-        else:
-            # Es ist Text (String, Object, Category) - wie das 't'
-            # Wir versuchen deutsche Kommas zu Punkten zu machen, um versteckte Zahlen zu retten
-            temp_str = df[col].astype(str).str.replace(',', '.').str.strip()
-            temp_numeric = pd.to_numeric(temp_str, errors='coerce')
+    # ---------------------------------------------------------
+    # 3. Vorverarbeitung
+    # ---------------------------------------------------------
+    print("Fülle leere Werte in den Features...")
+    for col in num_cols_present:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-            # Wenn mehr als 50% danach kaputt (NaN) sind, ist es echter Text (wie bei 'Log')
-            if temp_numeric.isna().sum() > (len(df) * 0.5):
-                df[col] = df[col].astype(str).fillna('Missing')
-                df[col] = encoders[col].fit_transform(df[col])
-                feature_cols.append(col)
-                numeric_cols_for_scaling.append(col)  # Nach dem Encoden ist es eine Zahl, also ab in den Scaler
-            else:
-                # Es waren Zahlen im Textformat!
-                df[col] = temp_numeric.fillna(0)
-                feature_cols.append(col)
-                numeric_cols_for_scaling.append(col)
+    for cat in cat_cols_present:
+        df[cat] = df[cat].fillna('unbekannt').astype(str)
 
-    if len(numeric_cols_for_scaling) > 0:
-        scaler = MinMaxScaler()
-        df[numeric_cols_for_scaling] = scaler.fit_transform(df[numeric_cols_for_scaling])
+    print("Wandle Kategorien in numerische Label um...")
+    encoded_cat_cols = []
+    for cat in cat_cols_present:
+        le_feature = LabelEncoder()
+        col_name = f'{cat}_encoded'
+        df[col_name] = le_feature.fit_transform(df[cat])
+        encoded_cat_cols.append(col_name)
 
-    print(f"Dynamische Feature-Erkennung abgeschlossen! Das Modell nutzt nun {len(feature_cols)} Features.")
-    return df, scaler, station_encoder, reason_encoder, feature_cols
+    all_features = num_cols_present + encoded_cat_cols
+
+    # ---------------------------------------------------------
+    # 4. MinMaxScaler anwenden
+    # ---------------------------------------------------------
+    print("Skaliere Features...")
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(df[all_features])
+
+    df_final = pd.DataFrame(scaled_data, columns=all_features)
+
+    df_final['is_failure'] = is_failure.values
+    df_final['station_encoded'] = station_encoded
+
+    target_cols = ['is_failure', 'station_encoded']
+    feature_cols = [col for col in df_final.columns if col not in target_cols]
+
+    return df_final, scaler, station_le, feature_cols, raw_durations, timestamps
 
 
-def create_sequences_multivar(df, feature_cols):
-    X, y_when, y_where, y_why = [], [], [], []
+def create_sequences_multivar(df, feature_cols, raw_durations, timestamps):
+    X, y_when, y_where, y_duration = [], [], [], []
+    seq_timestamps = []
+
     feature_data = df[feature_cols].values
     when_data = df['is_failure'].values
     where_data = df['station_encoded'].values
-    why_data = df['reason_encoded'].values
 
     for i in range(len(df) - p.SEQ_LENGTH):
-        X.append(feature_data[i: i + p.SEQ_LENGTH])
-        y_when.append(when_data[i + p.SEQ_LENGTH])
-        y_where.append(where_data[i + p.SEQ_LENGTH])
-        y_why.append(why_data[i + p.SEQ_LENGTH])
+        target_idx = i + p.SEQ_LENGTH
 
-    return np.array(X), np.array(y_when), np.array(y_where), np.array(y_why)
+        X.append(feature_data[i: target_idx])
+        y_when.append(when_data[target_idx])
+        y_where.append(where_data[target_idx])
+
+        y_duration.append(raw_durations[target_idx])
+        seq_timestamps.append(timestamps[target_idx])
+
+    return (np.array(X), np.array(y_when), np.array(y_where),
+            np.array(y_duration), np.array(seq_timestamps))
 
 
 def plot_training_history(history):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    ax1.plot(history.history['loss'], label='Train Loss', color='blue')
-    ax1.plot(history.history['val_loss'], label='Val Loss', color='orange')
+    ax1.plot(history.history['loss'], label='Total Loss (Weighted)', color='blue')
+    ax1.plot(history.history['val_loss'], label='Val Total Loss', color='orange')
     ax1.set_title('Total Model Loss')
-    ax1.legend();
+    ax1.legend()
     ax1.grid(True, linestyle='--')
 
     if 'When_Failure_accuracy' in history.history:
         ax2.plot(history.history['When_Failure_accuracy'], label='Train Acc', color='green')
         ax2.plot(history.history['val_When_Failure_accuracy'], label='Val Acc', color='red')
         ax2.set_title('Accuracy: Failure Prediction')
-        ax2.legend();
+        ax2.legend()
         ax2.grid(True, linestyle='--')
 
     plt.tight_layout()
     plt.savefig(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\trainingsverlauf.png')
-   # plt.show()
+    plt.close()
+
+
+def build_predictive_maintenance_model(input_shape, num_stations):
+    inputs = Input(shape=input_shape, name="Feature_Input")
+
+    x = LSTM(128, return_sequences=True)(inputs)
+    x = Dropout(0.2)(x)
+    x = LSTM(64, return_sequences=False)(x)
+    x = Dropout(0.2)(x)
+
+    # ------------------------------------------------------------------
+    # NEU: Verzweigte Architektur (Branched Network)
+    # Statt einer geteilten Schicht bekommt jede Aufgabe ihr eigenes
+    # kleines Netzwerk, um auf ihr spezifisches Ziel zu trainieren.
+    # ------------------------------------------------------------------
+
+    # Branch 1: Wann fällt es aus? (Klassifikation)
+    dense_when = Dense(32, activation='relu', name='Dense_When')(x)
+    out_when = Dense(1, activation='sigmoid', name='When_Failure')(dense_when)
+
+    # Branch 2: Wo fällt es aus? (Klassifikation)
+    dense_where = Dense(32, activation='relu', name='Dense_Where')(x)
+    if num_stations > 1:
+        out_where = Dense(num_stations, activation='softmax', name='Where_Station')(dense_where)
+        loss_where = 'sparse_categorical_crossentropy'
+    else:
+        out_where = Dense(1, activation='sigmoid', name='Where_Station')(dense_where)
+        loss_where = 'binary_crossentropy'
+
+    # Branch 3: Wie lange fällt es aus? (Regression)
+    dense_duration = Dense(32, activation='relu', name='Dense_Duration')(x)
+    out_duration = Dense(1, activation='relu', name='Duration')(dense_duration)
+
+    model = Model(inputs=inputs, outputs={'When_Failure': out_when, 'Where_Station': out_where, 'Duration': out_duration})
+
+    # Gewichte nochmals aggressiver justieren
+    model.compile(
+        optimizer=Adam(learning_rate=p.LEARNING_RATE),
+        loss={
+            'When_Failure': 'binary_crossentropy',
+            'Where_Station': loss_where,
+            'Duration': 'mse'
+        },
+        loss_weights={
+            'When_Failure': 10.0,    # Fokus extrem auf die Ausfall-Erkennung legen!
+            'Where_Station': 1.0,
+            'Duration': 0.001        # Regression darf Klassifikation nicht übertönen
+        },
+        metrics={'When_Failure': 'accuracy', 'Where_Station': 'accuracy', 'Duration': 'mae'}
+    )
+    return model
+
+def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols, num_features):
+    print("\n--- 8. Starting LIME (Explainable AI) Feature Analysis ---")
+    lime_feature_names = []
+    for timestep in range(p.SEQ_LENGTH):
+        for fname in feature_cols:
+            lime_feature_names.append(f"{fname} (t-{p.SEQ_LENGTH - 1 - timestep})")
+
+    X_train_flat = X_train.reshape(X_train.shape[0], -1)
+    explainer = lime_tabular.LimeTabularExplainer(
+        training_data=X_train_flat,
+        feature_names=lime_feature_names,
+        class_names=["No Failure", "Failure"],
+        mode='classification',
+        discretize_continuous=True
+    )
+
+    failure_indices = np.where(y_when_test == 1)[0]
+    if len(failure_indices) > 0:
+        idx_to_explain = failure_indices[0]
+        instance_3d = X_test[idx_to_explain]
+
+        def lime_predict_wrapper(flattened_data):
+            reshaped_3d = flattened_data.reshape(flattened_data.shape[0], p.SEQ_LENGTH, num_features)
+            fail_probs = model.predict(reshaped_3d, verbose=0)['When_Failure']
+            return np.hstack([1 - fail_probs, fail_probs])
+
+        exp = explainer.explain_instance(
+            data_row=instance_3d.reshape(-1),
+            predict_fn=lime_predict_wrapper,
+            num_features=15,
+            labels=(1,)
+        )
+        exp.save_to_file(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\lime_explanation_failure.html')
+    else:
+        print("Note: No machine failures were found in the test dataset for LIME.")
+
+
+def generate_shap_explanation(model, X_train, X_test, y_when_test, feature_cols):
+    print("\n--- 9. Starting SHAP (Shapley Additive exPlanations) ---")
+    shap_model = Model(inputs=model.input, outputs=model.get_layer('When_Failure').output)
+
+    background_indices = np.random.choice(X_train.shape[0], min(100, len(X_train)), replace=False)
+    background_data = X_train[background_indices]
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, module="keras")
+        warnings.filterwarnings("ignore", category=FutureWarning)
+
+        explainer_shap = shap.GradientExplainer(shap_model, background_data)
+        failure_indices = np.where(y_when_test == 1)[0]
+
+        if len(failure_indices) > 0:
+            test_samples_to_explain = X_test[failure_indices[:20]]
+            shap_values = explainer_shap.shap_values(test_samples_to_explain)
+
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]
+
+            shap_values_2d = np.sum(shap_values, axis=1)
+            test_samples_2d = np.mean(test_samples_to_explain, axis=1)
+
+            plt.figure(figsize=(10, 6))
+            shap.summary_plot(shap_values_2d, test_samples_2d, feature_names=feature_cols, show=False)
+            plt.tight_layout()
+            plt.savefig(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\shap_summary_plot.png')
+            plt.close()
+        else:
+            print("Note: No machine failures were found in the test dataset for SHAP.")
+
+
+def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
+    print("\n--- 10. Starting Permutation Feature Importance ---")
+    baseline_preds = (model.predict(X_test, verbose=0)['When_Failure'] > 0.5).astype(int).flatten()
+    baseline_acc = np.mean(baseline_preds == y_when_test)
+
+    feature_importances = {}
+    for i, feature_name in enumerate(feature_cols):
+        X_test_shuffled = X_test.copy()
+        np.random.shuffle(X_test_shuffled[:, :, i])
+
+        shuffled_preds = (model.predict(X_test_shuffled, verbose=0)['When_Failure'] > 0.5).astype(int).flatten()
+        shuffled_acc = np.mean(shuffled_preds == y_when_test)
+        feature_importances[feature_name] = baseline_acc - shuffled_acc
+
+    sorted_importances = sorted(feature_importances.items(), key=lambda x: x[1], reverse=False)
+    features_sorted = [x[0] for x in sorted_importances]
+    importances_sorted = [x[1] for x in sorted_importances]
+
+    plt.figure(figsize=(10, 8))
+    plt.barh(features_sorted, importances_sorted, color='skyblue')
+    plt.xlabel("Abfall in der Genauigkeit (Accuracy Drop)")
+    plt.title("Permutation Feature Importance (Global)")
+    plt.grid(axis='x', linestyle='--')
+    plt.tight_layout()
+    plt.savefig(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\permutation_importance.png')
+    plt.close()
