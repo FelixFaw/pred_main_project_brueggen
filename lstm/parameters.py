@@ -2,12 +2,12 @@
 
 # --- File Configuration ---
 FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\aufschreibung_mta_clean.xlsx"
-FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\raw\M200310 - STW_MT_Anlage.XLSX"
+FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\lstm_ready_data.csv"
 
 # --- Training Configuration ---
 SEQ_LENGTH = 60
 BATCH_SIZE = 32
-EPOCHS = 300
+EPOCHS = 500
 LEARNING_RATE = 0.000001
 TEST_SPLIT = 0.1
 
