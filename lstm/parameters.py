@@ -7,9 +7,12 @@ FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\
 # --- Training Configuration ---
 SEQ_LENGTH = 12
 BATCH_SIZE = 128
-EPOCHS = 30
+EPOCHS = 28
 LEARNING_RATE = 0.00519
 TEST_SPLIT = 0.1
+
+POS_WEIGHT = 1.0
+NEG_WEIGHT = 1.2
 
 # --- Target Definition (What to predict) ---
 # (Diese Spalten dürfen KEINE Features werden, sonst schummeln wir)
