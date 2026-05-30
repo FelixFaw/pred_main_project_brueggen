@@ -8,7 +8,7 @@ FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\
 SEQ_LENGTH = 12
 BATCH_SIZE = 128
 EPOCHS = 30
-LEARNING_RATE = 0.005
+LEARNING_RATE = 0.00519
 TEST_SPLIT = 0.1
 
 # --- Target Definition (What to predict) ---
