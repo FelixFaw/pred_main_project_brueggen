@@ -5,10 +5,10 @@ FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\d
 FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\lstm_ready_data.csv"
 
 # --- Training Configuration ---
-SEQ_LENGTH = 60
-BATCH_SIZE = 32
-EPOCHS = 500
-LEARNING_RATE = 0.000001
+SEQ_LENGTH = 12
+BATCH_SIZE = 128
+EPOCHS = 30
+LEARNING_RATE = 0.005
 TEST_SPLIT = 0.1
 
 # --- Target Definition (What to predict) ---
