@@ -5,21 +5,11 @@ FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\d
 FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\lstm_ready_data.csv"
 
 # --- Training Configuration ---
-num_features = 14
-SEQ_LENGTH = 12
-lstm_1_units = 16
-dropout_1 = 0.2
-lstm_2_units = 64
-dropout_2 = 0.4
-dense_units = 48
-LEARNING_RATE = 0.00519
-BATCH_SIZE = 128
-NEG_WEIGHT = 1.2
-
-EPOCHS = 25
+SEQ_LENGTH = 60
+BATCH_SIZE = 32
+EPOCHS = 500
+LEARNING_RATE = 0.000001
 TEST_SPLIT = 0.1
-POS_WEIGHT = 1.0
-
 
 # --- Target Definition (What to predict) ---
 # (Diese Spalten dürfen KEINE Features werden, sonst schummeln wir)
