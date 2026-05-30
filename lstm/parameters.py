@@ -1,8 +1,8 @@
 # parameters.py
 
 # --- File Configuration ---
-FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\aufschreibung_mta_clean.xlsx"
-FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\lstm_ready_data.csv"
+FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\raw\Daten\aufschreibung_mta_clean_2024to2026.csv"
+
 
 # --- Training Configuration ---
 num_features = 14
@@ -14,7 +14,7 @@ dropout_2 = 0.4
 dense_units = 48
 LEARNING_RATE = 0.00519
 BATCH_SIZE = 128
-NEG_WEIGHT = 1.2
+NEG_WEIGHT = 1.25
 
 EPOCHS = 25
 TEST_SPLIT = 0.1

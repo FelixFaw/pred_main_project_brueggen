@@ -55,18 +55,21 @@ def load_and_preprocess_data_all_features():
     # 2. Relevante Features definieren
     # ---------------------------------------------------------
     categorical_features = [
-        'Schicht', 'Materialnummer', 'Auftrag', 'Material-Text',
+        'Schicht', 'Auftrag', 'Material-Text',
         'Arbeitsplatz', 'Systemstatus'
     ]
 
     numeric_features = [
-        'Wochentag', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4',
-        'Menge i. O. L5', 'Menge Gesamt (Stück)', 'Dauer Org-Mangel',
-        'Dauer Anlagen-Ausfall intern', 'Dauer Logistik- Defizite',
+          'Menge N.i. O.', 'Menge i. O. L4','Anzahl MA','Materialnummer',
+        'Menge i. O. L5', 'Menge Gesamt (Stück)',
+         'Dauer Logistik- Defizite',
         'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min',
-        'Vorgangsmenge (MEINH)', 'Rückgem. Gutmenge (MEINH)',
-        'Vorgabewert 2 (VGE02)', 'Vorgabewert 3 (VGE03)'
+         'Rückgem. Gutmenge (MEINH)',
+        'Vorgabewert 2 (VGE02)','Vorgangsmenge (MEINH)', 'Vorgabewert 3 (VGE03)', 'Dauer Org-Mangel', 'Wochentag', 'Dauer Anlagen-Ausfall intern'
     ]
+
+    #für categorical 'Anzahl MA','Materialnummer',
+    #für numeric:
 
     # Data Leakage verhindern (Sowohl Dauer als auch Station komplett ausschließen!)
     numeric_features = [f for f in numeric_features if f not in [col_failure_duration, col_station]]
@@ -95,6 +98,23 @@ def load_and_preprocess_data_all_features():
 
     all_features = num_cols_present + encoded_cat_cols
 
+    all_features = num_cols_present + encoded_cat_cols
+
+    # --- HIER ZUM DEBUGGEN EINFÜGEN ---
+    print(f"Gefundene numerische Spalten: {num_cols_present}")
+    print(f"Gefundene kategorielle Spalten: {cat_cols_present}")
+    print(f"Gesamtliste all_features: {all_features}")
+
+    if len(all_features) == 0:
+        raise ValueError(
+            "Kritischer Fehler: Keine der definierten Feature-Spalten wurde in der Excel/CSV-Datei gefunden! Prüfe die Schreibweise in parameters.py und der Datei.")
+    # ----------------------------------
+
+    # 4. MinMaxScaler anwenden
+    # ---------------------------------------------------------
+    print("Skaliere Features...")
+    scaler = MinMaxScaler()
+
     # ---------------------------------------------------------
     # 4. MinMaxScaler anwenden
     # ---------------------------------------------------------
@@ -112,20 +132,24 @@ def load_and_preprocess_data_all_features():
 
 
 def create_sequences_multivar(df, feature_cols, timestamps):
-    X, y_when = [], []
-    seq_timestamps = []
-
+    X, y, seq_t = [], [], []
     feature_data = df[feature_cols].values
-    when_data = df['is_failure'].values
 
+    # Das Target ist 'is_failure'
+    target_data = df['is_failure'].values
+
+    # Wir stoppen SEQ_LENGTH Schritte vor dem Ende
     for i in range(len(df) - p.SEQ_LENGTH):
-        target_idx = i + p.SEQ_LENGTH
+        # Features gehen von i bis (i + SEQ_LENGTH - 1)
+        X.append(feature_data[i: i + p.SEQ_LENGTH])
 
-        X.append(feature_data[i: target_idx])
-        y_when.append(when_data[target_idx])
-        seq_timestamps.append(timestamps[target_idx])
+        # Das Target liegt genau EINEN Schritt in der Zukunft (i + SEQ_LENGTH)
+        y.append(target_data[i + p.SEQ_LENGTH])
 
-    return np.array(X), np.array(y_when), np.array(seq_timestamps)
+        # Synchronisiert den Zeitstempel für das vorhergesagte Fenster
+        seq_t.append(timestamps[i + p.SEQ_LENGTH])
+
+    return np.array(X), np.array(y), np.array(seq_t)
 
 
 def plot_training_history(history):
@@ -260,7 +284,7 @@ def generate_shap_explanation(model, X_train, X_test, y_when_test, feature_cols)
             shap_values_2d = np.sum(shap_values, axis=1)
             test_samples_2d = np.mean(test_samples_to_explain, axis=1)
 
-            plt.figure(figsize=(10, 6))
+            plt.figure(figsize=(1, 3))
             shap.summary_plot(shap_values_2d, test_samples_2d, feature_names=feature_cols, show=False)
             plt.tight_layout()
             plt.savefig(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\shap_summary_plot.png')
