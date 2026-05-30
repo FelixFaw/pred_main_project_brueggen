@@ -8,8 +8,9 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 # Importe für Modellbau und XAI
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import backend as K
 from lime import lime_tabular
 import shap
 
@@ -32,24 +33,16 @@ def load_and_preprocess_data_all_features():
     col_failure_duration = 'Dauer Anlagen-Ausfall'
     col_station = 'Station/ OP'
 
-    print("Bereite Zielvariablen (Targets) vor...")
+    print("Bereite Zielvariable (Target: WHEN) vor...")
 
-    # Dauer-Spalte bereinigen
+    # Dauer-Spalte bereinigen, um das 'WHEN'-Label (is_failure) sauber zu erzeugen
     if col_failure_duration not in df.columns:
         df[col_failure_duration] = 0
     else:
         df[col_failure_duration] = pd.to_numeric(df[col_failure_duration], errors='coerce').fillna(0)
 
-    # Station-Spalte bereinigen
-    if col_station not in df.columns:
-        df[col_station] = 'No_Station'
-    else:
-        df[col_station] = df[col_station].fillna('No_Station').astype(str)
-
+    # Das einzige verbleibende Target: Hat ein Ausfall stattgefunden?
     is_failure = (df[col_failure_duration] > 0).astype(int)
-
-    # Reale Dauer als Target für die Regression sichern
-    raw_durations = df[col_failure_duration].values
 
     if p.DT_FAULTS in df.columns:
         timestamps = df[p.DT_FAULTS].astype(str).values
@@ -57,9 +50,6 @@ def load_and_preprocess_data_all_features():
         timestamps = df['Istenddat.Durchf.'].astype(str).values
     else:
         timestamps = np.array([f"Schritt {i}" for i in range(len(df))])
-
-    station_le = LabelEncoder()
-    station_encoded = station_le.fit_transform(df[col_station])
 
     # ---------------------------------------------------------
     # 2. Relevante Features definieren
@@ -78,7 +68,7 @@ def load_and_preprocess_data_all_features():
         'Vorgabewert 2 (VGE02)', 'Vorgabewert 3 (VGE03)'
     ]
 
-    # Data Leakage verhindern
+    # Data Leakage verhindern (Sowohl Dauer als auch Station komplett ausschließen!)
     numeric_features = [f for f in numeric_features if f not in [col_failure_duration, col_station]]
     categorical_features = [f for f in categorical_features if f not in [col_failure_duration, col_station]]
 
@@ -113,49 +103,42 @@ def load_and_preprocess_data_all_features():
     scaled_data = scaler.fit_transform(df[all_features])
 
     df_final = pd.DataFrame(scaled_data, columns=all_features)
-
     df_final['is_failure'] = is_failure.values
-    df_final['station_encoded'] = station_encoded
 
-    target_cols = ['is_failure', 'station_encoded']
+    target_cols = ['is_failure']
     feature_cols = [col for col in df_final.columns if col not in target_cols]
 
-    return df_final, scaler, station_le, feature_cols, raw_durations, timestamps
+    return df_final, scaler, feature_cols, timestamps
 
 
-def create_sequences_multivar(df, feature_cols, raw_durations, timestamps):
-    X, y_when, y_where, y_duration = [], [], [], []
+def create_sequences_multivar(df, feature_cols, timestamps):
+    X, y_when = [], []
     seq_timestamps = []
 
     feature_data = df[feature_cols].values
     when_data = df['is_failure'].values
-    where_data = df['station_encoded'].values
 
     for i in range(len(df) - p.SEQ_LENGTH):
         target_idx = i + p.SEQ_LENGTH
 
         X.append(feature_data[i: target_idx])
         y_when.append(when_data[target_idx])
-        y_where.append(where_data[target_idx])
-
-        y_duration.append(raw_durations[target_idx])
         seq_timestamps.append(timestamps[target_idx])
 
-    return (np.array(X), np.array(y_when), np.array(y_where),
-            np.array(y_duration), np.array(seq_timestamps))
+    return np.array(X), np.array(y_when), np.array(seq_timestamps)
 
 
 def plot_training_history(history):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    ax1.plot(history.history['loss'], label='Total Loss (Weighted)', color='blue')
-    ax1.plot(history.history['val_loss'], label='Val Total Loss', color='orange')
-    ax1.set_title('Total Model Loss')
+    ax1.plot(history.history['loss'], label='Train Loss (MSE)', color='blue')
+    ax1.plot(history.history['val_loss'], label='Val Loss', color='orange')
+    ax1.set_title('Model Loss (WHEN Only)')
     ax1.legend()
     ax1.grid(True, linestyle='--')
 
-    if 'When_Failure_accuracy' in history.history:
-        ax2.plot(history.history['When_Failure_accuracy'], label='Train Acc', color='green')
-        ax2.plot(history.history['val_When_Failure_accuracy'], label='Val Acc', color='red')
+    if 'accuracy' in history.history:
+        ax2.plot(history.history['accuracy'], label='Train Acc', color='green')
+        ax2.plot(history.history['val_accuracy'], label='Val Acc', color='red')
         ax2.set_title('Accuracy: Failure Prediction')
         ax2.legend()
         ax2.grid(True, linestyle='--')
@@ -165,55 +148,54 @@ def plot_training_history(history):
     plt.close()
 
 
-def build_predictive_maintenance_model(input_shape, num_stations):
+def weighted_binary_crossentropy():
+    """
+    Benutzerdefinierte Loss-Funktion für unbalancierte binäre Daten.
+    pos_weight: Gewicht für die Fehlerklasse (1 / Failure)
+    neg_weight: Gewicht für den Normalbetrieb (0 / No Failure)
+    """
+
+    def loss(y_true, y_pred):
+        # Datentypen anpassen und Werte clippen, um log(0) - Fehler zu vermeiden
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
+
+        # Mathematische Berechnung der gewichteten Kreuzentropie
+        bin_los_1 = y_true * K.log(y_pred) * p.POS_WEIGHT
+        bin_los_0 = (1.0 - y_true) * K.log(1.0 - y_pred) * p.NEG_WEIGHT
+
+        return -K.mean(bin_los_1 + bin_los_0, axis=-1)
+
+    return loss
+
+def build_predictive_maintenance_model(input_shape):
     inputs = Input(shape=input_shape, name="Feature_Input")
 
-    x = LSTM(128, return_sequences=True)(inputs)
-    x = Dropout(0.2)(x)
-    x = LSTM(64, return_sequences=False)(x)
-    x = Dropout(0.2)(x)
+    x = LSTM(p.lstm_1_units, return_sequences=True)(inputs)
+    x = Dropout(p.dropout_1)(x)
+    x = LSTM(p.lstm_2_units, return_sequences=False)(x)
+    x = Dropout(p.dropout_2)(x)
 
-    # ------------------------------------------------------------------
-    # NEU: Verzweigte Architektur (Branched Network)
-    # Statt einer geteilten Schicht bekommt jede Aufgabe ihr eigenes
-    # kleines Netzwerk, um auf ihr spezifisches Ziel zu trainieren.
-    # ------------------------------------------------------------------
+    x = BatchNormalization()(x)
 
-    # Branch 1: Wann fällt es aus? (Klassifikation)
-    dense_when = Dense(32, activation='relu', name='Dense_When')(x)
-    out_when = Dense(1, activation='sigmoid', name='When_Failure')(dense_when)
 
-    # Branch 2: Wo fällt es aus? (Klassifikation)
-    dense_where = Dense(32, activation='relu', name='Dense_Where')(x)
-    if num_stations > 1:
-        out_where = Dense(num_stations, activation='softmax', name='Where_Station')(dense_where)
-        loss_where = 'sparse_categorical_crossentropy'
-    else:
-        out_where = Dense(1, activation='sigmoid', name='Where_Station')(dense_where)
-        loss_where = 'binary_crossentropy'
+    # Lineare Single-Output-Architektur statt Verzweigung
+    dense_when = Dense(p.dense_units, activation='relu', name='Dense_When')(x)
 
-    # Branch 3: Wie lange fällt es aus? (Regression)
-    dense_duration = Dense(32, activation='relu', name='Dense_Duration')(x)
-    out_duration = Dense(1, activation='relu', name='Duration')(dense_duration)
+    dense_when = BatchNormalization()(dense_when)
 
-    model = Model(inputs=inputs, outputs={'When_Failure': out_when, 'Where_Station': out_where, 'Duration': out_duration})
+    outputs = Dense(1, activation='sigmoid', name='When_Failure')(dense_when)
 
-    # Gewichte nochmals aggressiver justieren
+    model = Model(inputs=inputs, outputs=outputs)
+
+    # Einfacher Kompiliervorgang, da es nur noch einen Verlust (Loss) gibt
     model.compile(
         optimizer=Adam(learning_rate=p.LEARNING_RATE),
-        loss={
-            'When_Failure': 'binary_crossentropy',
-            'Where_Station': loss_where,
-            'Duration': 'mse'
-        },
-        loss_weights={
-            'When_Failure': 10.0,    # Fokus extrem auf die Ausfall-Erkennung legen!
-            'Where_Station': 1.0,
-            'Duration': 0.001        # Regression darf Klassifikation nicht übertönen
-        },
-        metrics={'When_Failure': 'accuracy', 'Where_Station': 'accuracy', 'Duration': 'mae'}
+        loss=weighted_binary_crossentropy(),
+        metrics=['accuracy']
     )
     return model
+
 
 def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols, num_features):
     print("\n--- 8. Starting LIME (Explainable AI) Feature Analysis ---")
@@ -238,13 +220,13 @@ def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols,
 
         def lime_predict_wrapper(flattened_data):
             reshaped_3d = flattened_data.reshape(flattened_data.shape[0], p.SEQ_LENGTH, num_features)
-            fail_probs = model.predict(reshaped_3d, verbose=0)['When_Failure']
+            fail_probs = model.predict(reshaped_3d, verbose=0)
             return np.hstack([1 - fail_probs, fail_probs])
 
         exp = explainer.explain_instance(
             data_row=instance_3d.reshape(-1),
             predict_fn=lime_predict_wrapper,
-            num_features=15,
+            num_features=p.num_features,
             labels=(1,)
         )
         exp.save_to_file(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\lime_explanation_failure.html')
@@ -254,7 +236,9 @@ def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols,
 
 def generate_shap_explanation(model, X_train, X_test, y_when_test, feature_cols):
     print("\n--- 9. Starting SHAP (Shapley Additive exPlanations) ---")
-    shap_model = Model(inputs=model.input, outputs=model.get_layer('When_Failure').output)
+
+    # Da das Modell nun direkt "When_Failure" ausgibt, greifen wir direkt auf das Haupt-Output zu
+    shap_model = model
 
     background_indices = np.random.choice(X_train.shape[0], min(100, len(X_train)), replace=False)
     background_data = X_train[background_indices]
@@ -287,7 +271,7 @@ def generate_shap_explanation(model, X_train, X_test, y_when_test, feature_cols)
 
 def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
     print("\n--- 10. Starting Permutation Feature Importance ---")
-    baseline_preds = (model.predict(X_test, verbose=0)['When_Failure'] > 0.5).astype(int).flatten()
+    baseline_preds = (model.predict(X_test, verbose=0) > 0.5).astype(int).flatten()
     baseline_acc = np.mean(baseline_preds == y_when_test)
 
     feature_importances = {}
@@ -295,7 +279,7 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
         X_test_shuffled = X_test.copy()
         np.random.shuffle(X_test_shuffled[:, :, i])
 
-        shuffled_preds = (model.predict(X_test_shuffled, verbose=0)['When_Failure'] > 0.5).astype(int).flatten()
+        shuffled_preds = (model.predict(X_test_shuffled, verbose=0) > 0.5).astype(int).flatten()
         shuffled_acc = np.mean(shuffled_preds == y_when_test)
         feature_importances[feature_name] = baseline_acc - shuffled_acc
 
