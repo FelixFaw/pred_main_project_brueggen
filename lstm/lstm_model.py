@@ -41,18 +41,24 @@ if __name__ == "__main__":
     seq_timestamps_test = seq_timestamps[split_idx:]
 
     print("3. Computing class weights to counteract data imbalance...")
+
     classes = np.unique(y_when_train)
     weights = compute_class_weight(class_weight='balanced', classes=classes, y=y_when_train)
     class_weight_dict = {classes[0]: weights[0], classes[1]: weights[1]}
-    print(f"Calculated Weights -> No Failure (0): {class_weight_dict[0]:.2f}, Failure (1): {class_weight_dict[1]:.2f}")
 
     sample_weights_when = np.array([class_weight_dict[label] for label in y_when_train])
 
+    neg_w = class_weight_dict[0]
+    pos_w = class_weight_dict[1]
+
+
     print("4. Building and compiling the Single-Output LSTM model (Only WHEN)...")
+    # Gewichte extrahieren (0 = No Failure, 1 = Failure)
+
+
     model = hf.build_predictive_maintenance_model(
         input_shape=(p.SEQ_LENGTH, num_features)
     )
-
     print("5. Starting training with sample weights...")
 
     # Early Stopping Callback definieren
@@ -69,7 +75,7 @@ if __name__ == "__main__":
         epochs=p.EPOCHS,
         batch_size=p.BATCH_SIZE,
         verbose=1,
-        sample_weight=sample_weights_when,
+        #sample_weight=sample_weights_when,
         callbacks = [early_stopping]
     )
 

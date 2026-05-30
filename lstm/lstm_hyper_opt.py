@@ -9,7 +9,6 @@ from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalizat
 from tensorflow.keras.optimizers import Adam
 import keras_tuner as kt
 import numpy as np
-from sklearn.utils.class_weight import compute_class_weight
 
 import parameters as p
 import helping_functions as hf
@@ -27,7 +26,7 @@ class LSTMTimeSeriesTuner(kt.RandomSearch):
     def run_trial(self, trial, df, feature_cols, timestamps, *args, **kwargs):
         hp = trial.hyperparameters
 
-        # HIER GEÄNDERT: Wir fragen den Wert ab, den der Tuner in 'build' registriert hat
+        # Wir fragen den Wert ab, den der Tuner in 'build' registriert hat
         current_seq_length = hp.get('seq_length')
 
         # Temporär den globalen Parameter spiegeln, damit hf.create_sequences_multivar korrekt arbeitet
@@ -41,19 +40,14 @@ class LSTMTimeSeriesTuner(kt.RandomSearch):
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_when_train, y_when_test = y_when[:split_idx], y_when[split_idx:]
 
-        # Klassengewichte passend zur aktuellen Trainingsmenge berechnen
-        classes = np.unique(y_when_train)
-        weights = compute_class_weight(class_weight='balanced', classes=classes, y=y_when_train)
-        class_weight_dict = {classes[0]: weights[0], classes[1]: weights[1]}
-        sample_weights_when = np.array([class_weight_dict[label] for label in y_when_train])
-
         # Hyperparameter für die Batch Size abfragen
         current_batch_size = hp.Choice('batch_size', values=[32, 64, 128, 256])
 
         # kwargs für den Fit-Lauf aktualisieren
         kwargs['batch_size'] = current_batch_size
         kwargs['validation_data'] = (X_test, y_when_test)
-        kwargs['sample_weight'] = sample_weights_when
+
+        # HIER GEÄNDERT: 'sample_weight' wurde entfernt, da der Loss die Gewichtung übernimmt!
 
         # Den Standard-Trainingslauf mit den modifizierten Daten starten
         return super(LSTMTimeSeriesTuner, self).run_trial(trial, X_train, y_when_train, *args, **kwargs)
@@ -65,8 +59,7 @@ class LSTMTimeSeriesTuner(kt.RandomSearch):
 def build_ultimate_tuning_model(hp):
     num_features = hp.get('num_features')
 
-    # HIER GEÄNDERT: 'seq_length' wird jetzt hier definiert/registriert!
-    # Damit weiß der Oracle-Katalog von KerasTuner sofort beim Start Bescheid.
+    # 'seq_length' wird hier definiert/registriert
     current_seq_length = hp.Int('seq_length', min_value=12, max_value=48, step=12)
 
     inputs = Input(shape=(current_seq_length, num_features), name="Feature_Input")
@@ -94,12 +87,20 @@ def build_ultimate_tuning_model(hp):
 
     model = Model(inputs=inputs, outputs=outputs)
 
+    # HIER GEÄNDERT: Der Tuner sucht das optimale Gewichtungsverhältnis für den Loss
+    # Ein Wert > 1.0 bestraft verpasste Ausfälle härter, ein Wert < 1.0 senkt Fehlalarme.
+    hp_pos_weight = hp.Float('loss_pos_weight', min_value=0.5, max_value=2.5, step=0.25)
+
+    # Globale Parameter für die Loss-Funktion in hf setzen
+    p.NEG_WEIGHT = 1.0
+    p.POS_WEIGHT = hp_pos_weight
+
     # Suchraum für Optimizer
     hp_learning_rate = hp.Choice('learning_rate', values=[1e-3, 5e-4, 1e-4, 5e-5])
 
     model.compile(
         optimizer=Adam(learning_rate=hp_learning_rate),
-        loss='binary_crossentropy',
+        loss=hf.weighted_binary_crossentropy(),  # Nutzt die dynamischen Gewichte
         metrics=['accuracy', tf.keras.metrics.AUC(name='pr_auc', curve='PR')]
     )
     return model
@@ -113,19 +114,17 @@ if __name__ == "__main__":
     df, scaler, feature_cols, timestamps = hf.load_and_preprocess_data_all_features()
     num_features = len(feature_cols)
 
-    # Alten Tuning-Ordner löschen oder umbenennen, um Cache-Konflikte zu vermeiden
-    # (Da wir den Suchraum geändert haben, würde KerasTuner sonst meckern)
     hp = kt.HyperParameters()
     hp.Fixed('num_features', num_features)
 
-    # Instanziierung des Zeitreihen-Tuners mit neuem Projektpfad
+    # Instanziierung des Zeitreihen-Tuners mit neuem Projektnamen wegen geändertem Suchraum
     tuner = LSTMTimeSeriesTuner(
         hypermodel=build_ultimate_tuning_model,
         hyperparameters=hp,
         objective=kt.Objective("val_pr_auc", direction="max"),
         max_trials=20,
         directory='kt_tuning_ultimate',
-        project_name='lstm_ultimate_v3'  # Leicht geänderter Name, um Cache zurückzusetzen
+        project_name='lstm_ultimate_weighted_v1'  # Name geändert, um Cache zurückzusetzen
     )
 
     early_stopping = tf.keras.callbacks.EarlyStopping(
@@ -134,7 +133,7 @@ if __name__ == "__main__":
         restore_best_weights=True
     )
 
-    print("\n--- Starting Ultimate Hyperparameter Search (Data + Model) ---")
+    print("\n--- Starting Ultimate Hyperparameter Search (Data + Model + Loss) ---")
     tuner.search(
         df=df,
         feature_cols=feature_cols,
