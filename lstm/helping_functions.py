@@ -171,16 +171,16 @@ def weighted_binary_crossentropy():
 def build_predictive_maintenance_model(input_shape):
     inputs = Input(shape=input_shape, name="Feature_Input")
 
-    x = LSTM(16, return_sequences=True)(inputs)
-    x = Dropout(0.2)(x)
-    x = LSTM(64, return_sequences=False)(x)
-    x = Dropout(0.4)(x)
+    x = LSTM(p.lstm_1_units, return_sequences=True)(inputs)
+    x = Dropout(p.dropout_1)(x)
+    x = LSTM(p.lstm_2_units, return_sequences=False)(x)
+    x = Dropout(p.dropout_2)(x)
 
     x = BatchNormalization()(x)
 
 
     # Lineare Single-Output-Architektur statt Verzweigung
-    dense_when = Dense(48, activation='relu', name='Dense_When')(x)
+    dense_when = Dense(p.dense_units, activation='relu', name='Dense_When')(x)
 
     dense_when = BatchNormalization()(dense_when)
 
@@ -226,7 +226,7 @@ def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols,
         exp = explainer.explain_instance(
             data_row=instance_3d.reshape(-1),
             predict_fn=lime_predict_wrapper,
-            num_features=14,
+            num_features=p.num_features,
             labels=(1,)
         )
         exp.save_to_file(r'C:\Users\tanne\Documents\Hochschule\Brueggen_plots\lime_explanation_failure.html')
