@@ -47,9 +47,8 @@ class LSTMTimeSeriesTuner(kt.RandomSearch):
         kwargs['batch_size'] = current_batch_size
         kwargs['validation_data'] = (X_test, y_when_test)
 
-        # HIER GEÄNDERT: 'sample_weight' wurde entfernt, da der Loss die Gewichtung übernimmt!
+        # 'sample_weight' bleibt entfernt, da der gewichtete Loss das übernimmt
 
-        # Den Standard-Trainingslauf mit den modifizierten Daten starten
         return super(LSTMTimeSeriesTuner, self).run_trial(trial, X_train, y_when_train, *args, **kwargs)
 
 
@@ -87,20 +86,21 @@ def build_ultimate_tuning_model(hp):
 
     model = Model(inputs=inputs, outputs=outputs)
 
-    # HIER GEÄNDERT: Der Tuner sucht das optimale Gewichtungsverhältnis für den Loss
-    # Ein Wert > 1.0 bestraft verpasste Ausfälle härter, ein Wert < 1.0 senkt Fehlalarme.
-    hp_pos_weight = hp.Float('loss_pos_weight', min_value=0.5, max_value=2.5, step=0.25)
+    # HIER INTEGRATION DER GEWICHTE:
+    # Wir fixieren die Basis für den Normalbetrieb (No Failure)
+    p.POS_WEIGHT = 1.0
 
-    # Globale Parameter für die Loss-Funktion in hf setzen
-    p.NEG_WEIGHT = 1.0
-    p.POS_WEIGHT = hp_pos_weight
+    # Der Tuner sucht das optimale relative Gewicht für die Fehlerklasse (Failure).
+    # Werte > 1.0 priorisieren das Finden von Ausfällen (höherer Recall für Failure).
+    # Werte < 1.0 priorisieren das Vermeiden von Fehlalarmen (höhere Präzision für No Failure).
+    p.NEG_WEIGHT = hp.Float('loss_neg_weight', min_value=1.2, max_value=3.0, step=0.25)
 
     # Suchraum für Optimizer
     hp_learning_rate = hp.Choice('learning_rate', values=[1e-3, 5e-4, 1e-4, 5e-5])
 
     model.compile(
         optimizer=Adam(learning_rate=hp_learning_rate),
-        loss=hf.weighted_binary_crossentropy(),  # Nutzt die dynamischen Gewichte
+        loss=hf.weighted_binary_crossentropy(),  # Nutzt die dynamisch gesetzten Parameter
         metrics=['accuracy', tf.keras.metrics.AUC(name='pr_auc', curve='PR')]
     )
     return model
@@ -117,14 +117,14 @@ if __name__ == "__main__":
     hp = kt.HyperParameters()
     hp.Fixed('num_features', num_features)
 
-    # Instanziierung des Zeitreihen-Tuners mit neuem Projektnamen wegen geändertem Suchraum
+    # Instanziierung des Zeitreihen-Tuners
     tuner = LSTMTimeSeriesTuner(
         hypermodel=build_ultimate_tuning_model,
         hyperparameters=hp,
         objective=kt.Objective("val_pr_auc", direction="max"),
         max_trials=20,
         directory='kt_tuning_ultimate',
-        project_name='lstm_ultimate_weighted_v1'  # Name geändert, um Cache zurückzusetzen
+        project_name='lstm_ultimate_weighted_v2'  # V2 um den Cache sauber zurückzusetzen
     )
 
     early_stopping = tf.keras.callbacks.EarlyStopping(
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         restore_best_weights=True
     )
 
-    print("\n--- Starting Ultimate Hyperparameter Search (Data + Model + Loss) ---")
+    print("\n--- Starting Ultimate Hyperparameter Search (Data + Model + Loss Weights) ---")
     tuner.search(
         df=df,
         feature_cols=feature_cols,
