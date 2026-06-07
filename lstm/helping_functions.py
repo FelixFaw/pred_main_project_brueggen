@@ -18,68 +18,97 @@ import parameters as p
 
 
 def load_and_preprocess_data_all_features():
-    print("Lade Prozessdaten...")
+    print("Lade Prozessdaten und Ausfalldaten...")
 
-    file_path = p.FILE_PATH_FAULTS
-
-    if file_path.endswith('.csv'):
-        df = pd.read_csv(file_path, sep=';', encoding='utf-8')
-    else:
-        df = pd.read_excel(file_path)
+    # 1. Beide Dateien laden
+    df_process = pd.read_csv(p.FILE_PATH_PROCESS, sep=';', encoding='utf-8')
+    df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=',', encoding='utf-8')
 
     # ---------------------------------------------------------
-    # 1. Zielvariablen (Targets) extrahieren und BEREINIGEN
+    # 2. Datumsspalten intelligent & flexibel vereinheitlichen
     # ---------------------------------------------------------
-    col_failure_duration = 'Dauer Anlagen-Ausfall'
-    col_station = 'Station/ OP'
+    # 'format='mixed' verhindert das Vertauschen von Tag/Monat bei unterschiedlichen Quell-Formaten
+    df_process['merge_date'] = pd.to_datetime(df_process[p.DT_PROCESS_DATE], format='mixed', errors='coerce').dt.date
+    df_faults['merge_date'] = pd.to_datetime(df_faults[p.DT_FAULTS], format='mixed', errors='coerce').dt.date
+
+    # Zeilen ohne gültiges Datum entfernen
+    df_process = df_process.dropna(subset=['merge_date'])
+    df_faults = df_faults.dropna(subset=['merge_date'])
+
+    # Debug-Ausgabe: Welche Zeiträume liegen wirklich vor und passen sie zusammen?
+    print(f"Prozessdaten Zeitraum: von {df_process['merge_date'].min()} bis {df_process['merge_date'].max()}")
+    print(f"Ausfalldaten Zeitraum:  von {df_faults['merge_date'].min()} bis {df_faults['merge_date'].max()}")
+
+    # Schnittmenge der Tage prüfen (Sollte nach dem Fix deutlich über 42 Tagen liegen)
+    shared_dates = set(df_process['merge_date']).intersection(set(df_faults['merge_date']))
+    print(f"Anzahl REAL übereinstimmender Tage zwischen beiden Dateien: {len(shared_dates)}")
+
+    # ---------------------------------------------------------
+    # 3. Ausfalldaten auf Tagesbasis aggregieren
+    # ---------------------------------------------------------
+    print("Aggregiere Ausfalldaten auf Tagesbasis...")
+    agg_dict = {
+        'Dauer Anlagen-Ausfall': 'sum',
+        'Dauer Anlagen-Ausfall intern': 'sum',
+        'Dauer Org-Mangel': 'sum',
+        'Dauer Logistik- Defizite': 'sum',
+        'Menge N.i. O.': 'sum',
+        'Menge i. O. L4': 'sum',
+        'Menge i. O. L5': 'sum'
+    }
+    agg_dict = {k: v for k, v in agg_dict.items() if k in df_faults.columns}
+
+    df_faults_daily = df_faults.groupby('merge_date').agg(agg_dict).reset_index()
+
+    # Left Join durchführen (Prozessschritte behalten ihre ursprüngliche Zeilenanzahl)
+    df = pd.merge(df_process, df_faults_daily, on='merge_date', how='left')
+    print(f"Zusammengeführte Daten Form: {df.shape}")
+
+    # ---------------------------------------------------------
+    # 4. Zielvariablen (Targets) extrahieren und BEREINIGEN
+    # ---------------------------------------------------------
+    col_failure_duration = p.TARGET_DURATION  # 'Dauer Anlagen-Ausfall'
+    col_station = p.TARGET_STATION  # 'Station/ OP'
 
     print("Bereite Zielvariable (Target: WHEN) vor...")
 
-    # Dauer-Spalte bereinigen, um das 'WHEN'-Label (is_failure) sauber zu erzeugen
     if col_failure_duration not in df.columns:
         df[col_failure_duration] = 0
     else:
         df[col_failure_duration] = pd.to_numeric(df[col_failure_duration], errors='coerce').fillna(0)
 
-    # Das einzige verbleibende Target: Hat ein Ausfall stattgefunden?
+    # Target setzen: Gab es an diesem Tag einen Ausfall?
     is_failure = (df[col_failure_duration] > 0).astype(int)
 
-    if p.DT_FAULTS in df.columns:
-        timestamps = df[p.DT_FAULTS].astype(str).values
-    elif 'Istenddat.Durchf.' in df.columns:
-        timestamps = df['Istenddat.Durchf.'].astype(str).values
-    else:
-        timestamps = np.array([f"Schritt {i}" for i in range(len(df))])
+    # Kontrolle: Wie viele Fehler sind nach dem Merge im Gesamtdatensatz vorhanden?
+    print(f"GESAMTANZAHL gefundener Ausfall-Zeilen NACH dem Merge: {is_failure.sum()}")
+
+    timestamps = df['merge_date'].astype(str).values
 
     # ---------------------------------------------------------
-    # 2. Relevante Features definieren
+    # 5. Relevante Features definieren
     # ---------------------------------------------------------
     categorical_features = [
         'Schicht', 'Auftrag', 'Material-Text',
         'Arbeitsplatz', 'Systemstatus'
     ]
 
+    # Bereinigte Liste ohne die MTA-Dauer-Spalten, um Data Leakage zu verhindern
     numeric_features = [
-          'Menge N.i. O.', 'Menge i. O. L4','Anzahl MA','Materialnummer',
-        'Menge i. O. L5', 'Menge Gesamt (Stück)',
-         'Dauer Logistik- Defizite',
-        'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min',
-         'Rückgem. Gutmenge (MEINH)',
-        'Vorgabewert 2 (VGE02)','Vorgangsmenge (MEINH)', 'Vorgabewert 3 (VGE03)', 'Dauer Org-Mangel', 'Wochentag', 'Dauer Anlagen-Ausfall intern'
+        'Anzahl MA', 'Materialnummer',
+        'Rückgem. Gutmenge (MEINH)', 'Vorgangsmenge (MEINH)'
     ]
 
-    #für categorical 'Anzahl MA','Materialnummer',
-    #für numeric:
-
-    # Data Leakage verhindern (Sowohl Dauer als auch Station komplett ausschließen!)
+    # Data Leakage absichern (Sowohl Dauer als auch Station komplett ausschließen!)
     numeric_features = [f for f in numeric_features if f not in [col_failure_duration, col_station]]
     categorical_features = [f for f in categorical_features if f not in [col_failure_duration, col_station]]
 
+    # Nur Spalten wählen, die auch wirklich im Dataframe existieren
     num_cols_present = [col for col in numeric_features if col in df.columns]
     cat_cols_present = [col for col in categorical_features if col in df.columns]
 
     # ---------------------------------------------------------
-    # 3. Vorverarbeitung
+    # 6. Vorverarbeitung (Imputation & Encoding)
     # ---------------------------------------------------------
     print("Fülle leere Werte in den Features...")
     for col in num_cols_present:
@@ -98,25 +127,15 @@ def load_and_preprocess_data_all_features():
 
     all_features = num_cols_present + encoded_cat_cols
 
-    all_features = num_cols_present + encoded_cat_cols
-
-    # --- HIER ZUM DEBUGGEN EINFÜGEN ---
     print(f"Gefundene numerische Spalten: {num_cols_present}")
     print(f"Gefundene kategorielle Spalten: {cat_cols_present}")
     print(f"Gesamtliste all_features: {all_features}")
 
     if len(all_features) == 0:
-        raise ValueError(
-            "Kritischer Fehler: Keine der definierten Feature-Spalten wurde in der Excel/CSV-Datei gefunden! Prüfe die Schreibweise in parameters.py und der Datei.")
-    # ----------------------------------
-
-    # 4. MinMaxScaler anwenden
-    # ---------------------------------------------------------
-    print("Skaliere Features...")
-    scaler = MinMaxScaler()
+        raise ValueError("Kritischer Fehler: Keine der definierten Feature-Spalten wurde gefunden!")
 
     # ---------------------------------------------------------
-    # 4. MinMaxScaler anwenden
+    # 7. MinMaxScaler anwenden
     # ---------------------------------------------------------
     print("Skaliere Features...")
     scaler = MinMaxScaler()
@@ -129,6 +148,15 @@ def load_and_preprocess_data_all_features():
     feature_cols = [col for col in df_final.columns if col not in target_cols]
 
     return df_final, scaler, feature_cols, timestamps
+
+    #numeric_features = [
+    #    'Menge N.i. O.', 'Menge i. O. L4', 'Anzahl MA', 'Materialnummer',
+   #     'Menge i. O. L5', 'Dauer Logistik- Defizite',
+   #     'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min',
+    #    'Rückgem. Gutmenge (MEINH)', 'Vorgangsmenge (MEINH)',
+   #     'Dauer Org-Mangel', 'Dauer Anlagen-Ausfall intern'
+   # ]
+
 
 
 def create_sequences_multivar(df, feature_cols, timestamps):

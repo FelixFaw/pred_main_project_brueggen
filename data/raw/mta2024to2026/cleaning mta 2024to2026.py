@@ -1,14 +1,14 @@
 #bereinigen
 
-Done    #Dauer Arbeitszeit runden auf .0 (59.9999 auf 60.0)
-Done    #Menge gesamt = zu Menge gesamt NIO benennen (einfach umbenennen)
-to check     #alle zeilen raus wo bemerkeung + OP den wert null (dann auch kein Ausfall i guess)
-unvollständig    #Menge N.io + Menge I.O L4 + Menge I.O L5 von null-Wert  auf 0 (Gedanke: lstm besser mit 0 als mit Null weil wir hier Mengen als Input haben)
-unvollständig    # bei allen Dauer Anlagen Ausfall von Null-Wert auf 0
+    #Dauer Arbeitszeit runden auf .0 (59.9999 auf 60.0)
+    #Menge gesamt = zu Menge gesamt NIO benennen (einfach umbenennen)
+    #alle zeilen raus wo bemerkeung + OP den wert null (dann auch kein Ausfall i guess)
+    #Menge N.io + Menge I.O L4 + Menge I.O L5 von null-Wert  auf 0 (Gedanke: lstm besser mit 0 als mit Null weil wir hier Mengen als Input haben)
+    # bei allen Dauer Anlagen Ausfall von Null-Wert auf 0
 
-fehlt #entfernen : fehlercode (nur einmal was drinnen stehend)
+#entfernen : fehlercode (nur einmal was drinnen stehend)
 
-fehlt #syn daten:
+#syn daten:
 
     #Zeit in Stunden nach Schichtbeginn
     #Tag, Monat, Woche, Quartal, Jahr

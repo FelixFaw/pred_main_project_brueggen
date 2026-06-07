@@ -1,8 +1,9 @@
 # parameters.py
 
-# --- File Configuration ---
-FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\raw\Daten\aufschreibung_mta_clean_2024to2026.csv"
-
+# Pfad zu den Prozessdaten (Datei 1)
+FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\M200310_processdata_2024_2026.csv"
+# Pfad zu den MTA-Aufschreibungen / Ausfällen (Datei 2)
+FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\aufschreibung_mta_clean_gesamt.csv"
 
 # --- Training Configuration ---
 num_features = 14
@@ -16,17 +17,15 @@ LEARNING_RATE = 0.00519
 BATCH_SIZE = 128
 NEG_WEIGHT = 1.25
 
-EPOCHS = 25
-TEST_SPLIT = 0.1
+EPOCHS = 30
+TEST_SPLIT = 0.20
 POS_WEIGHT = 1.0
 
 
 # --- Target Definition (What to predict) ---
-# (Diese Spalten dürfen KEINE Features werden, sonst schummeln wir)
-TARGET_DURATION = '"Dauer\nAnlagen-Ausfall\n"'
+TARGET_DURATION = 'Dauer Anlagen-Ausfall' # Datei 2
 TARGET_STATION = 'Station/ OP'
 
 # --- Datetime Columns for joining ---
-DT_FAULTS = 'DatumNEU'
-DT_PROCESS_DATE = 'Istenddat.Durchf.'
-DT_PROCESS_TIME = 'Istendzt.Durchf.'
+DT_PROCESS_DATE = 'Ende Durchf.(Dat.)'  # Datumsspalte aus Datei 1
+DT_FAULTS = 'DatumNEU'                  # Datumsspalte aus Datei 2

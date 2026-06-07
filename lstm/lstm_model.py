@@ -1,6 +1,8 @@
 # main.py
 import os
 
+from sklearn.model_selection import train_test_split
+
 # Unterdrückt die TensorFlow C++ Warnungen (oneDNN, CPU instructions)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -34,11 +36,15 @@ if __name__ == "__main__":
     )
     num_features = len(feature_cols)
 
-    # Chronological train-test split
-    split_idx = int(len(X) * (1 - p.TEST_SPLIT))
-    X_train, X_test = X[:split_idx], X[split_idx:]
-    y_when_train, y_when_test = y_when[:split_idx], y_when[split_idx:]
-    seq_timestamps_test = seq_timestamps[split_idx:]
+    X_train, X_test, y_when_train, y_when_test, _, seq_timestamps_test = train_test_split(
+        X, y_when, seq_timestamps,
+        test_size=p.TEST_SPLIT,
+        stratify=y_when,  # Zwingt das Testset dazu, echte Ausfälle zu beinhalten
+        random_state=42
+    )
+
+    print(f"Anzahl Ausfälle im TRAIN-Set: {np.sum(y_when_train)}")
+    print(f"Anzahl Ausfälle im TEST-Set: {np.sum(y_when_test)}")
 
     print("3. Computing class weights to counteract data imbalance...")
 
@@ -75,7 +81,7 @@ if __name__ == "__main__":
         epochs=p.EPOCHS,
         batch_size=p.BATCH_SIZE,
         verbose=1,
-        #sample_weight=sample_weights_when,
+       # sample_weight=sample_weights_when,
         callbacks = [early_stopping]
     )
 
