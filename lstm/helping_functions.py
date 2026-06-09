@@ -4,7 +4,7 @@ import numpy as np
 import warnings
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
-
+from tensorflow.keras.regularizers import l2
 # Importe für Modellbau und XAI
 import tensorflow as tf
 from tensorflow.keras.models import Model
@@ -18,134 +18,82 @@ import parameters as p
 
 
 def load_and_preprocess_data_all_features():
-    print("Lade Prozessdaten und Ausfalldaten...")
+    print("Lade Daten und generiere hoch-informative Trend-Features...")
 
-    # 1. Beide Dateien laden
     df_process = pd.read_csv(p.FILE_PATH_PROCESS, sep=';', encoding='utf-8')
     df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=',', encoding='utf-8')
 
-    # ---------------------------------------------------------
-    # 2. Datumsspalten intelligent & flexibel vereinheitlichen
-    # ---------------------------------------------------------
-    # 'format='mixed' verhindert das Vertauschen von Tag/Monat bei unterschiedlichen Quell-Formaten
-    df_process['merge_date'] = pd.to_datetime(df_process[p.DT_PROCESS_DATE], format='mixed', errors='coerce').dt.date
-    df_faults['merge_date'] = pd.to_datetime(df_faults[p.DT_FAULTS], format='mixed', errors='coerce').dt.date
+    # Zeitstempel runden (Prozessdaten)
+    col_proc_date = 'Ende Durchf.(Dat.)' if 'Ende Durchf.(Dat.)' in df_process.columns else 'Ist-Ende Vorg.'
+    col_proc_time = 'Ende Durchf.(Zeit)' if 'Ende Durchf.(Zeit)' in df_process.columns else 'Istendzt.Durchf.'
 
-    # Zeilen ohne gültiges Datum entfernen
+    df_process = df_process.dropna(subset=[col_proc_date, col_proc_time])
+    df_process['merge_date'] = pd.to_datetime(
+        df_process[col_proc_date].astype(str) + ' ' + df_process[col_proc_time].astype(str),
+        format='mixed', errors='coerce'
+    ).dt.floor('h')
     df_process = df_process.dropna(subset=['merge_date'])
+
+    # Zeitstempel runden (Ausfalldaten)
+    df_faults = df_faults.dropna(subset=['Datum', 'Zeit von'])
+    df_faults['merge_date'] = pd.to_datetime(
+        df_faults['Datum'].astype(str) + ' ' + df_faults['Zeit von'].astype(str),
+        format='mixed', errors='coerce'
+    ).dt.floor('h')
     df_faults = df_faults.dropna(subset=['merge_date'])
 
-    # Debug-Ausgabe: Welche Zeiträume liegen wirklich vor und passen sie zusammen?
-    print(f"Prozessdaten Zeitraum: von {df_process['merge_date'].min()} bis {df_process['merge_date'].max()}")
-    print(f"Ausfalldaten Zeitraum:  von {df_faults['merge_date'].min()} bis {df_faults['merge_date'].max()}")
+    # Bereinigung der Mengen
+    df_process['Gutmenge_bereinigt'] = df_process['Rückgem. Gutmenge (GMEIN)'].fillna(
+        df_process['Rückgem. Gutmenge (MEINH)'])
+    df_process['Gutmenge_bereinigt'] = pd.to_numeric(df_process['Gutmenge_bereinigt'], errors='coerce').fillna(0)
 
-    # Schnittmenge der Tage prüfen (Sollte nach dem Fix deutlich über 42 Tagen liegen)
-    shared_dates = set(df_process['merge_date']).intersection(set(df_faults['merge_date']))
-    print(f"Anzahl REAL übereinstimmender Tage zwischen beiden Dateien: {len(shared_dates)}")
+    # 1. Stündliche Basis-Features aggregieren
+    df_hourly = df_process.groupby('merge_date').agg(
+        Durchsatz_Pro_Stunde=('Gutmenge_bereinigt', 'sum'),
+        Anzahl_Prozessschritte=('Vorgang', 'count'),
+        Materialwechsel_Anzahl=('Materialnummer', 'nunique'),
+        Statuswechsel_Anzahl=('Systemstatus', 'nunique')
+    ).reset_index()
 
-    # ---------------------------------------------------------
-    # 3. Ausfalldaten auf Tagesbasis aggregieren
-    # ---------------------------------------------------------
-    print("Aggregiere Ausfalldaten auf Tagesbasis...")
-    agg_dict = {
-        'Dauer Anlagen-Ausfall': 'sum',
-        'Dauer Anlagen-Ausfall intern': 'sum',
-        'Dauer Org-Mangel': 'sum',
-        'Dauer Logistik- Defizite': 'sum',
-        'Menge N.i. O.': 'sum',
-        'Menge i. O. L4': 'sum',
-        'Menge i. O. L5': 'sum'
-    }
-    agg_dict = {k: v for k, v in agg_dict.items() if k in df_faults.columns}
+    df_hourly = df_hourly.sort_values('merge_date').reset_index(drop=True)
 
-    df_faults_daily = df_faults.groupby('merge_date').agg(agg_dict).reset_index()
+    # --- 2. TREND-FEATURES GENERIEREN (Der Schlüssel für das LSTM) ---
+    # Wir berechnen die Volatilität/Schwankung der letzten 3 und 6 Stunden
+    # Wenn eine Maschine anfängt zu stocken, schlagen diese Werte massiv aus!
+    df_hourly['Durchsatz_Schwankung_3h'] = df_hourly['Durchsatz_Pro_Stunde'].rolling(window=3,
+                                                                                     min_periods=1).std().fillna(0)
+    df_hourly['Durchsatz_Schwankung_6h'] = df_hourly['Durchsatz_Pro_Stunde'].rolling(window=6,
+                                                                                     min_periods=1).std().fillna(0)
 
-    # Left Join durchführen (Prozessschritte behalten ihre ursprüngliche Zeilenanzahl)
-    df = pd.merge(df_process, df_faults_daily, on='merge_date', how='left')
-    print(f"Zusammengeführte Daten Form: {df.shape}")
+    df_hourly['Prozess_Schwankung_3h'] = df_hourly['Anzahl_Prozessschritte'].rolling(window=3,
+                                                                                     min_periods=1).std().fillna(0)
+    df_hourly['Prozess_Schwankung_6h'] = df_hourly['Anzahl_Prozessschritte'].rolling(window=6,
+                                                                                     min_periods=1).std().fillna(0)
 
-    # ---------------------------------------------------------
-    # 4. Zielvariablen (Targets) extrahieren und BEREINIGEN
-    # ---------------------------------------------------------
-    col_failure_duration = p.TARGET_DURATION  # 'Dauer Anlagen-Ausfall'
-    col_station = p.TARGET_STATION  # 'Station/ OP'
+    # Ausfalldaten aggregieren
+    df_faults_hourly = df_faults.groupby('merge_date').agg(
+        Dauer_Anlagen_Ausfall=('Dauer Anlagen-Ausfall', 'sum')
+    ).reset_index()
 
-    print("Bereite Zielvariable (Target: WHEN) vor...")
+    # Verheiraten via Left Join
+    df = pd.merge(df_hourly, df_faults_hourly, on='merge_date', how='left')
+    df = df.sort_values('merge_date').reset_index(drop=True)
 
-    if col_failure_duration not in df.columns:
-        df[col_failure_duration] = 0
-    else:
-        df[col_failure_duration] = pd.to_numeric(df[col_failure_duration], errors='coerce').fillna(0)
+    df['Dauer_Anlagen_Ausfall'] = df['Dauer_Anlagen_Ausfall'].fillna(0)
+    is_failure = (df['Dauer_Anlagen_Ausfall'] > 0).astype(int)
 
-    # Target setzen: Gab es an diesem Tag einen Ausfall?
-    is_failure = (df[col_failure_duration] > 0).astype(int)
+    print(f"Stündliche Daten Matrix Form mit Trend-Features: {df.shape}")
+    timestamps = df['merge_date'].dt.strftime('%Y-%m-%d %H:%M:%S').values
 
-    # Kontrolle: Wie viele Fehler sind nach dem Merge im Gesamtdatensatz vorhanden?
-    print(f"GESAMTANZAHL gefundener Ausfall-Zeilen NACH dem Merge: {is_failure.sum()}")
+    # Features isolieren (Keine breiten Material-Dummies, sondern reine Dynamik-Features!)
+    feature_cols = [c for c in df.columns if c not in ['merge_date', 'Dauer_Anlagen_Ausfall']]
 
-    timestamps = df['merge_date'].astype(str).values
-
-    # ---------------------------------------------------------
-    # 5. Relevante Features definieren
-    # ---------------------------------------------------------
-    categorical_features = [
-        'Schicht', 'Auftrag', 'Material-Text',
-        'Arbeitsplatz', 'Systemstatus'
-    ]
-
-    # Bereinigte Liste ohne die MTA-Dauer-Spalten, um Data Leakage zu verhindern
-    numeric_features = [
-        'Anzahl MA', 'Materialnummer',
-        'Rückgem. Gutmenge (MEINH)', 'Vorgangsmenge (MEINH)'
-    ]
-
-    # Data Leakage absichern (Sowohl Dauer als auch Station komplett ausschließen!)
-    numeric_features = [f for f in numeric_features if f not in [col_failure_duration, col_station]]
-    categorical_features = [f for f in categorical_features if f not in [col_failure_duration, col_station]]
-
-    # Nur Spalten wählen, die auch wirklich im Dataframe existieren
-    num_cols_present = [col for col in numeric_features if col in df.columns]
-    cat_cols_present = [col for col in categorical_features if col in df.columns]
-
-    # ---------------------------------------------------------
-    # 6. Vorverarbeitung (Imputation & Encoding)
-    # ---------------------------------------------------------
-    print("Fülle leere Werte in den Features...")
-    for col in num_cols_present:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    for cat in cat_cols_present:
-        df[cat] = df[cat].fillna('unbekannt').astype(str)
-
-    print("Wandle Kategorien in numerische Label um...")
-    encoded_cat_cols = []
-    for cat in cat_cols_present:
-        le_feature = LabelEncoder()
-        col_name = f'{cat}_encoded'
-        df[col_name] = le_feature.fit_transform(df[cat])
-        encoded_cat_cols.append(col_name)
-
-    all_features = num_cols_present + encoded_cat_cols
-
-    print(f"Gefundene numerische Spalten: {num_cols_present}")
-    print(f"Gefundene kategorielle Spalten: {cat_cols_present}")
-    print(f"Gesamtliste all_features: {all_features}")
-
-    if len(all_features) == 0:
-        raise ValueError("Kritischer Fehler: Keine der definierten Feature-Spalten wurde gefunden!")
-
-    # ---------------------------------------------------------
-    # 7. MinMaxScaler anwenden
-    # ---------------------------------------------------------
-    print("Skaliere Features...")
+    # Skalierung
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df[all_features])
+    scaled_data = scaler.fit_transform(df[feature_cols])
 
-    df_final = pd.DataFrame(scaled_data, columns=all_features)
+    df_final = pd.DataFrame(scaled_data, columns=feature_cols)
     df_final['is_failure'] = is_failure.values
-
-    target_cols = ['is_failure']
-    feature_cols = [col for col in df_final.columns if col not in target_cols]
 
     return df_final, scaler, feature_cols, timestamps
 
@@ -162,20 +110,21 @@ def load_and_preprocess_data_all_features():
 def create_sequences_multivar(df, feature_cols, timestamps):
     X, y, seq_t = [], [], []
     feature_data = df[feature_cols].values
-
-    # Das Target ist 'is_failure'
     target_data = df['is_failure'].values
 
-    # Wir stoppen SEQ_LENGTH Schritte vor dem Ende
-    for i in range(len(df) - p.SEQ_LENGTH):
-        # Features gehen von i bis (i + SEQ_LENGTH - 1)
-        X.append(feature_data[i: i + p.SEQ_LENGTH])
+    # HIER ERWEITERN WIR DAS FENSTER AUF X STUNDEN
+    PREDICTION_WINDOW = 2
 
-        # Das Target liegt genau EINEN Schritt in der Zukunft (i + SEQ_LENGTH)
-        y.append(target_data[i + p.SEQ_LENGTH])
+    for i in range(len(df) - p.SEQ_LENGTH - PREDICTION_WINDOW + 1):
+        X.append(feature_data[i : i + p.SEQ_LENGTH])
 
-        # Synchronisiert den Zeitstempel für das vorhergesagte Fenster
-        seq_t.append(timestamps[i + p.SEQ_LENGTH])
+        window_targets = target_data[i + p.SEQ_LENGTH : i + p.SEQ_LENGTH + PREDICTION_WINDOW]
+        if np.any(window_targets == 1):
+            y.append(1)
+        else:
+            y.append(0)
+
+        seq_t.append(timestamps[i + p.SEQ_LENGTH - 1])
 
     return np.array(X), np.array(y), np.array(seq_t)
 
@@ -220,30 +169,29 @@ def weighted_binary_crossentropy():
 
     return loss
 
+
 def build_predictive_maintenance_model(input_shape):
     inputs = Input(shape=input_shape, name="Feature_Input")
 
-    x = LSTM(p.lstm_1_units, return_sequences=True)(inputs)
+    # L2-Regularisierung (0.001) zwingt das Modell zu weichen, stabilen Entscheidungsgrenzen
+    x = LSTM(p.lstm_1_units, return_sequences=True, kernel_regularizer=l2(0.001))(inputs)
     x = Dropout(p.dropout_1)(x)
-    x = LSTM(p.lstm_2_units, return_sequences=False)(x)
+
+    x = LSTM(p.lstm_2_units, return_sequences=False, kernel_regularizer=l2(0.001))(x)
     x = Dropout(p.dropout_2)(x)
 
     x = BatchNormalization()(x)
 
-
-    # Lineare Single-Output-Architektur statt Verzweigung
-    dense_when = Dense(p.dense_units, activation='relu', name='Dense_When')(x)
-
+    dense_when = Dense(p.dense_units, activation='relu', kernel_regularizer=l2(0.001))(x)
     dense_when = BatchNormalization()(dense_when)
 
     outputs = Dense(1, activation='sigmoid', name='When_Failure')(dense_when)
 
     model = Model(inputs=inputs, outputs=outputs)
 
-    # Einfacher Kompiliervorgang, da es nur noch einen Verlust (Loss) gibt
     model.compile(
         optimizer=Adam(learning_rate=p.LEARNING_RATE),
-        loss=weighted_binary_crossentropy(),
+        loss='binary_crossentropy',
         metrics=['accuracy']
     )
     return model
