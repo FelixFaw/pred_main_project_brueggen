@@ -1,11 +1,11 @@
 # helping_functions.py
+
 import pandas as pd
 import numpy as np
 import warnings
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 from tensorflow.keras.regularizers import l2
-# Importe für Modellbau und XAI
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization
@@ -23,31 +23,42 @@ def load_and_preprocess_data_all_features():
     df_process = pd.read_csv(p.FILE_PATH_PROCESS, sep=';', encoding='utf-8')
     df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=',', encoding='utf-8')
 
-    # Zeitstempel runden (Prozessdaten)
-    col_proc_date = 'Ende Durchf.(Dat.)' if 'Ende Durchf.(Dat.)' in df_process.columns else 'Ist-Ende Vorg.'
-    col_proc_time = 'Ende Durchf.(Zeit)' if 'Ende Durchf.(Zeit)' in df_process.columns else 'Istendzt.Durchf.'
+    # --- 1. SPALTEN-AUSWAHL FÜR PROZESSDATEN ---
+    # Priorisiere die neuen Spalten 'Ist-Ende Vorg.' und 'Istendzt.Durchf.'
+    if 'Ist-Ende Vorg.' in df_process.columns:
+        col_proc_date = 'Ist-Ende Vorg.'
+    else:
+        col_proc_date = 'Ende Durchf.(Dat.)'
 
+    if 'Istendzt.Durchf.' in df_process.columns:
+        col_proc_time = 'Istendzt.Durchf.'
+    else:
+        col_proc_time = 'Ende Durchf.(Zeit)'
+
+    # Zeilen löschen, bei denen Datum oder Zeit fehlen
     df_process = df_process.dropna(subset=[col_proc_date, col_proc_time])
+
+    # Datum und Zeit zusammenführen und auf volle Stunde runden
     df_process['merge_date'] = pd.to_datetime(
-        df_process[col_proc_date].astype(str) + ' ' + df_process[col_proc_time].astype(str),
+        df_process[col_proc_date].astype(str).str.strip() + ' ' + df_process[col_proc_time].astype(str).str.strip(),
         format='mixed', errors='coerce'
     ).dt.floor('h')
     df_process = df_process.dropna(subset=['merge_date'])
 
-    # Zeitstempel runden (Ausfalldaten)
-    df_faults = df_faults.dropna(subset=['Datum', 'Zeit von'])
+    # --- 2. ZEITSTEMPEL RUNDEN (AUSFALLDATEN) ---
+    df_faults = df_faults.dropna(subset=['Datum', 'Zeit_von_min'])
     df_faults['merge_date'] = pd.to_datetime(
-        df_faults['Datum'].astype(str) + ' ' + df_faults['Zeit von'].astype(str),
+        df_faults['Datum'].astype(str).str.strip() + ' ' + df_faults['Zeit_von_min'].astype(str).str.strip(),
         format='mixed', errors='coerce'
     ).dt.floor('h')
     df_faults = df_faults.dropna(subset=['merge_date'])
 
-    # Bereinigung der Mengen
+    # --- 3. BEREINIGUNG DER MENGEN ---
     df_process['Gutmenge_bereinigt'] = df_process['Rückgem. Gutmenge (GMEIN)'].fillna(
         df_process['Rückgem. Gutmenge (MEINH)'])
     df_process['Gutmenge_bereinigt'] = pd.to_numeric(df_process['Gutmenge_bereinigt'], errors='coerce').fillna(0)
 
-    # 1. Stündliche Basis-Features aggregieren
+    # 4. Stündliche Basis-Features aggregieren
     df_hourly = df_process.groupby('merge_date').agg(
         Durchsatz_Pro_Stunde=('Gutmenge_bereinigt', 'sum'),
         Anzahl_Prozessschritte=('Vorgang', 'count'),
@@ -57,9 +68,7 @@ def load_and_preprocess_data_all_features():
 
     df_hourly = df_hourly.sort_values('merge_date').reset_index(drop=True)
 
-    # --- 2. TREND-FEATURES GENERIEREN (Der Schlüssel für das LSTM) ---
-    # Wir berechnen die Volatilität/Schwankung der letzten 3 und 6 Stunden
-    # Wenn eine Maschine anfängt zu stocken, schlagen diese Werte massiv aus!
+    # --- 5. TREND-FEATURES GENERIEREN ---
     df_hourly['Durchsatz_Schwankung_3h'] = df_hourly['Durchsatz_Pro_Stunde'].rolling(window=3,
                                                                                      min_periods=1).std().fillna(0)
     df_hourly['Durchsatz_Schwankung_6h'] = df_hourly['Durchsatz_Pro_Stunde'].rolling(window=6,
@@ -75,6 +84,11 @@ def load_and_preprocess_data_all_features():
         Dauer_Anlagen_Ausfall=('Dauer Anlagen-Ausfall', 'sum')
     ).reset_index()
 
+    # --- 6. DATENTYP-GEWÄHRLEISTUNG VOR DEM MERGE ---
+    # Erzwinge bei beiden DataFrames den exakt gleichen Datetime-Datentyp
+    df_hourly['merge_date'] = pd.to_datetime(df_hourly['merge_date'])
+    df_faults_hourly['merge_date'] = pd.to_datetime(df_faults_hourly['merge_date'])
+
     # Verheiraten via Left Join
     df = pd.merge(df_hourly, df_faults_hourly, on='merge_date', how='left')
     df = df.sort_values('merge_date').reset_index(drop=True)
@@ -82,10 +96,13 @@ def load_and_preprocess_data_all_features():
     df['Dauer_Anlagen_Ausfall'] = df['Dauer_Anlagen_Ausfall'].fillna(0)
     is_failure = (df['Dauer_Anlagen_Ausfall'] > 0).astype(int)
 
+    # Wichtige Kontroll-Ausgaben im Terminal
+    print(f"-> Anzahl gematchter Ausfallstunden nach Merge: {is_failure.sum()}")
     print(f"Stündliche Daten Matrix Form mit Trend-Features: {df.shape}")
+
     timestamps = df['merge_date'].dt.strftime('%Y-%m-%d %H:%M:%S').values
 
-    # Features isolieren (Keine breiten Material-Dummies, sondern reine Dynamik-Features!)
+    # Features isolieren
     feature_cols = [c for c in df.columns if c not in ['merge_date', 'Dauer_Anlagen_Ausfall']]
 
     # Skalierung
@@ -97,28 +114,18 @@ def load_and_preprocess_data_all_features():
 
     return df_final, scaler, feature_cols, timestamps
 
-    #numeric_features = [
-    #    'Menge N.i. O.', 'Menge i. O. L4', 'Anzahl MA', 'Materialnummer',
-   #     'Menge i. O. L5', 'Dauer Logistik- Defizite',
-   #     'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min',
-    #    'Rückgem. Gutmenge (MEINH)', 'Vorgangsmenge (MEINH)',
-   #     'Dauer Org-Mangel', 'Dauer Anlagen-Ausfall intern'
-   # ]
-
-
 
 def create_sequences_multivar(df, feature_cols, timestamps):
     X, y, seq_t = [], [], []
     feature_data = df[feature_cols].values
     target_data = df['is_failure'].values
 
-    # HIER ERWEITERN WIR DAS FENSTER AUF X STUNDEN
     PREDICTION_WINDOW = 2
 
     for i in range(len(df) - p.SEQ_LENGTH - PREDICTION_WINDOW + 1):
-        X.append(feature_data[i : i + p.SEQ_LENGTH])
+        X.append(feature_data[i: i + p.SEQ_LENGTH])
 
-        window_targets = target_data[i + p.SEQ_LENGTH : i + p.SEQ_LENGTH + PREDICTION_WINDOW]
+        window_targets = target_data[i + p.SEQ_LENGTH: i + p.SEQ_LENGTH + PREDICTION_WINDOW]
         if np.any(window_targets == 1):
             y.append(1)
         else:

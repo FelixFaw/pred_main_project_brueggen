@@ -3,7 +3,7 @@
 # Pfad zu den Prozessdaten (Datei 1)
 FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\M200310_processdata_2024_2026.csv"
 # Pfad zu den MTA-Aufschreibungen / Ausfällen (Datei 2)
-FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\aufschreibung_mta_clean_gesamt.csv"
+FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\lstm_ready_data.csv"
 
 # --- Training Configuration ---
 #num_features = 14
@@ -36,10 +36,11 @@ BATCH_SIZE = 32
 EPOCHS = 10
 TEST_SPLIT = 0.20
 best_threshold = 0.32
+
 # --- Target Definition (What to predict) ---
 TARGET_DURATION = 'Dauer Anlagen-Ausfall' # Datei 2
 TARGET_STATION = 'Station/ OP'
 
 # --- Datetime Columns for joining ---
 DT_PROCESS_DATE = 'Ende Durchf.(Dat.)'  # Datumsspalte aus Datei 1
-DT_FAULTS = 'DatumNEU'                  # Datumsspalte aus Datei 2
+DT_FAULTS = 'Datum'                  # Datumsspalte aus Datei 2
