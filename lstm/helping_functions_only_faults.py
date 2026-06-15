@@ -18,34 +18,12 @@ import parameters as p
 
 
 def load_and_preprocess_data_all_features():
-    print("Lade Daten und generiere hoch-informative Trend-Features...")
+    print("Lade Daten und generiere hoch-informative Trend-Features (NUR FAULTS-LISTE)...")
 
-    df_process = pd.read_csv(p.FILE_PATH_PROCESS, sep=';', encoding='utf-8')
+    # Prozessdaten werden nicht mehr geladen
     df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=',', encoding='utf-8')
 
-    # --- 1. SPALTEN-AUSWAHL FÜR PROZESSDATEN ---
-    # Priorisiere die neuen Spalten 'Ist-Ende Vorg.' und 'Istendzt.Durchf.'
-    if 'Ist-Ende Vorg.' in df_process.columns:
-        col_proc_date = 'Ist-Ende Vorg.'
-    else:
-        col_proc_date = 'Ende Durchf.(Dat.)'
-
-    if 'Istendzt.Durchf.' in df_process.columns:
-        col_proc_time = 'Istendzt.Durchf.'
-    else:
-        col_proc_time = 'Ende Durchf.(Zeit)'
-
-    # Zeilen löschen, bei denen Datum oder Zeit fehlen
-    df_process = df_process.dropna(subset=[col_proc_date, col_proc_time])
-
-    # Datum und Zeit zusammenführen und auf volle Stunde runden
-    df_process['merge_date'] = pd.to_datetime(
-        df_process[col_proc_date].astype(str).str.strip() + ' ' + df_process[col_proc_time].astype(str).str.strip(),
-        format='mixed', errors='coerce'
-    ).dt.floor('h')
-    df_process = df_process.dropna(subset=['merge_date'])
-
-    # --- 2. ZEITSTEMPEL RUNDEN (AUSFALLDATEN) ---
+    # --- 1. ZEITSTEMPEL RUNDEN (AUSFALLDATEN) ---
     df_faults = df_faults.dropna(subset=['Datum', 'Zeit von'])
     df_faults['merge_date'] = pd.to_datetime(
         df_faults['Datum'].astype(str).str.strip() + ' ' + df_faults['Zeit von'].astype(str).str.strip(),
@@ -53,56 +31,35 @@ def load_and_preprocess_data_all_features():
     ).dt.floor('h')
     df_faults = df_faults.dropna(subset=['merge_date'])
 
-    # --- 3. BEREINIGUNG DER MENGEN ---
-    df_process['Gutmenge_bereinigt'] = df_process['Rückgem. Gutmenge (GMEIN)'].fillna(
-        df_process['Rückgem. Gutmenge (MEINH)'])
-    df_process['Gutmenge_bereinigt'] = pd.to_numeric(df_process['Gutmenge_bereinigt'], errors='coerce').fillna(0)
-
-    # 4. Stündliche Basis-Features aggregieren
-    df_hourly = df_process.groupby('merge_date').agg(
-        Durchsatz_Pro_Stunde=('Gutmenge_bereinigt', 'sum'),
-        Anzahl_Prozessschritte=('Vorgang', 'count'),
-        Materialwechsel_Anzahl=('Materialnummer', 'nunique'),
-        Statuswechsel_Anzahl=('Systemstatus', 'nunique')
-    ).reset_index()
-
-    df_hourly = df_hourly.sort_values('merge_date').reset_index(drop=True)
-
-    # --- 5. TREND-FEATURES GENERIEREN ---
-    df_hourly['Durchsatz_Schwankung_3h'] = df_hourly['Durchsatz_Pro_Stunde'].rolling(window=3,
-                                                                                     min_periods=1).std().fillna(0)
-    df_hourly['Durchsatz_Schwankung_6h'] = df_hourly['Durchsatz_Pro_Stunde'].rolling(window=6,
-                                                                                     min_periods=1).std().fillna(0)
-
-    df_hourly['Prozess_Schwankung_3h'] = df_hourly['Anzahl_Prozessschritte'].rolling(window=3,
-                                                                                     min_periods=1).std().fillna(0)
-    df_hourly['Prozess_Schwankung_6h'] = df_hourly['Anzahl_Prozessschritte'].rolling(window=6,
-                                                                                     min_periods=1).std().fillna(0)
-
-    # Ausfalldaten aggregieren
+    # --- 2. AUSFALLDATEN AGGREGRIEREN & FEATURES GENERIEREN ---
+    # Wir fügen 'Anzahl_Ausfaelle' hinzu, damit das Modell ein Eingabe-Feature hat
     df_faults_hourly = df_faults.groupby('merge_date').agg(
-        Dauer_Anlagen_Ausfall=('Dauer Anlagen-Ausfall', 'sum')
+        Dauer_Anlagen_Ausfall=('Dauer Anlagen-Ausfall', 'sum'),
+        Anzahl_Ausfaelle=('Dauer Anlagen-Ausfall', 'count')
     ).reset_index()
 
-    # --- 6. DATENTYP-GEWÄHRLEISTUNG VOR DEM MERGE ---
-    # Erzwinge bei beiden DataFrames den exakt gleichen Datetime-Datentyp
-    df_hourly['merge_date'] = pd.to_datetime(df_hourly['merge_date'])
+    df_faults_hourly = df_faults_hourly.sort_values('merge_date').reset_index(drop=True)
+
+    # Trend-Features basierend auf den Ausfällen generieren
+    df_faults_hourly['Ausfaelle_Schwankung_3h'] = df_faults_hourly['Anzahl_Ausfaelle'].rolling(window=3, min_periods=1).std().fillna(0)
+    df_faults_hourly['Ausfaelle_Schwankung_6h'] = df_faults_hourly['Anzahl_Ausfaelle'].rolling(window=6, min_periods=1).std().fillna(0)
+
+    # --- 3. DATENTYP-GEWÄHRLEISTUNG ---
     df_faults_hourly['merge_date'] = pd.to_datetime(df_faults_hourly['merge_date'])
 
-    # Verheiraten via Left Join
-    df = pd.merge(df_hourly, df_faults_hourly, on='merge_date', how='left')
-    df = df.sort_values('merge_date').reset_index(drop=True)
+    # Kein Merge mehr nötig: df besteht rein aus den aggregierten Faults-Daten
+    df = df_faults_hourly.copy()
 
     df['Dauer_Anlagen_Ausfall'] = df['Dauer_Anlagen_Ausfall'].fillna(0)
     is_failure = (df['Dauer_Anlagen_Ausfall'] > 0).astype(int)
 
     # Wichtige Kontroll-Ausgaben im Terminal
-    print(f"-> Anzahl gematchter Ausfallstunden nach Merge: {is_failure.sum()}")
-    print(f"Stündliche Daten Matrix Form mit Trend-Features: {df.shape}")
+    print(f"-> Anzahl verbleibender Ausfallstunden in der Faults-Matrix: {is_failure.sum()}")
+    print(f"Stündliche Daten Matrix Form (Nur Faults): {df.shape}")
 
     timestamps = df['merge_date'].dt.strftime('%Y-%m-%d %H:%M:%S').values
 
-    # Features isolieren
+    # Features isolieren (merge_date und das Vorhersageziel fliegen raus)
     feature_cols = [c for c in df.columns if c not in ['merge_date', 'Dauer_Anlagen_Ausfall']]
 
     # Skalierung
@@ -157,18 +114,10 @@ def plot_training_history(history):
 
 
 def weighted_binary_crossentropy():
-    """
-    Benutzerdefinierte Loss-Funktion für unbalancierte binäre Daten.
-    pos_weight: Gewicht für die Fehlerklasse (1 / Failure)
-    neg_weight: Gewicht für den Normalbetrieb (0 / No Failure)
-    """
-
     def loss(y_true, y_pred):
-        # Datentypen anpassen und Werte clippen, um log(0) - Fehler zu vermeiden
         y_true = tf.cast(y_true, tf.float32)
         y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
 
-        # Mathematische Berechnung der gewichteten Kreuzentropie
         bin_los_1 = y_true * K.log(y_pred) * p.POS_WEIGHT
         bin_los_0 = (1.0 - y_true) * K.log(1.0 - y_pred) * p.NEG_WEIGHT
 
@@ -180,7 +129,6 @@ def weighted_binary_crossentropy():
 def build_predictive_maintenance_model(input_shape):
     inputs = Input(shape=input_shape, name="Feature_Input")
 
-    # L2-Regularisierung (0.001) zwingt das Modell zu weichen, stabilen Entscheidungsgrenzen
     x = LSTM(p.lstm_1_units, return_sequences=True, kernel_regularizer=l2(0.001))(inputs)
     x = Dropout(p.dropout_1)(x)
 
@@ -244,7 +192,6 @@ def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols,
 def generate_shap_explanation(model, X_train, X_test, y_when_test, feature_cols):
     print("\n--- 9. Starting SHAP (Shapley Additive exPlanations) ---")
 
-    # Da das Modell nun direkt "When_Failure" ausgibt, greifen wir direkt auf das Haupt-Output zu
     shap_model = model
 
     background_indices = np.random.choice(X_train.shape[0], min(100, len(X_train)), replace=False)

@@ -12,7 +12,7 @@ df = pd.read_excel(file_path)
 # Wir trennen numerische Features (für den Scaler) und kategorische Features
 numeric_features = [
     'Wochentag', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4',
-    'Menge i. O. L5',  'Dauer Org-Mangel',
+    'Menge i. O. L5',  'Dauer Org-Mangel', 'MengeGesamtNIO',
     'Dauer Anlagen-Ausfall', 'Störung aufgrund Vormaterial',
     'Dauer Anlagen-Ausfall intern', 'Dauer Logistik- Defizite',
     'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min', 'Datum'

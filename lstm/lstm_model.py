@@ -13,7 +13,7 @@ from sklearn.metrics import classification_report
 from sklearn.utils.class_weight import compute_class_weight
 import random
 import parameters as p
-import helping_functions as hf
+import helping_functions_only_faults as hf
 
 np.random.seed(42)
 tf.random.set_seed(42)
