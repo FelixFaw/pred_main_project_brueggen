@@ -5,18 +5,19 @@ from sklearn.preprocessing import MinMaxScaler, LabelEncoder
 
 # 1. Daten laden
 # KORREKTUR: .xlsx Dateien müssen mit read_excel eingelesen werden
-file_path = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\aufschreibung_mta_clean.xlsx"
+file_path = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\aufschreibung_mta_clean_gesamt_2024to2026.xlsx"
 df = pd.read_excel(file_path)
 
 # 2. Features und Targets definieren
 # Wir trennen numerische Features (für den Scaler) und kategorische Features
 numeric_features = [
     'Wochentag', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4',
-    'Menge i. O. L5', 'Menge Gesamt (Stück)', 'Dauer Org-Mangel',
+    'Menge i. O. L5',  'Dauer Org-Mangel',
     'Dauer Anlagen-Ausfall', 'Störung aufgrund Vormaterial',
     'Dauer Anlagen-Ausfall intern', 'Dauer Logistik- Defizite',
-    'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min'
+    'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min', 'Datum'
 ]
+#'Menge Gesamt (Stück)',
 
 categorical_features = ['Schicht', 'Station/ OP']
 
@@ -37,6 +38,8 @@ df_encoded = pd.get_dummies(df[categorical_features], drop_first=True)
 
 # Kombiniere numerische Features und die neuen Encodings
 features_to_scale = pd.concat([df[numeric_features], df_encoded], axis=1)
+
+feature_cols = [c for c in df.columns if c not in ['Datum', 'Dauer_Anlagen_Ausfall', 'Zeit_von_min', 'Zeit_bis_min']]
 
 # 4. MinMaxScaler anwenden (Nur auf Features!)
 scaler = MinMaxScaler(feature_range=(0, 1))
