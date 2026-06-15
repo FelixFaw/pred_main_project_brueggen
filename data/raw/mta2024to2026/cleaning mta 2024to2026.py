@@ -18,8 +18,8 @@ fehlt #syn daten:
     #Zeit seit letzter Wartung GLOBAL
     # boolean Ausfall/kein Ausfall
 
-    # Wie lange bis die Maschine erneut ausfällt (Maschine fällt nach 30 Minuten aus, danach nach 40 Minuten etc... ) STAIONBEZOGEN
-    # durchschnittliche Zeitspanne je Ausfall einer einzelnen Maschine (bps. im durchschnitt alle 30 Minunten fällt Maschine XY aus) STAIONBEZOGEN
+    # Wie lange bis die Maschine erneut ausfällt (Maschine fällt nach 30 Minuten aus, danach nach 40 Minuten etc... ) STATIONBEZOGEN
+    # durchschnittliche Zeitspanne je Ausfall einer einzelnen Maschine (bps. im durchschnitt alle 30 Minuten fällt Maschine XY aus) STATIONBEZOGEN
     #wie viele produkte wurden angefertigt seit letztem Ausfall GLOBAL
     #wie viele Produkte NIO seit letzten Ausfall
     #gleitende Mittelwerte der Fehlerhäufigkeit (Rolling Mean über zb 7 oder 30 Tage, ich würde vmtl auf woche UND monat das ausgeben einmal)
@@ -31,3 +31,5 @@ fehlt #syn daten:
     
     #letzten 5 Maschinen-Ausfälle vor der vom Ausfall betroffenen Maschine
     #letzten 5 Maschinen-Ausfälle vor der vom Ausfall betroffenen Maschine ( PRÜFEN:kann man das input ins lstm geben)
+
+    #ÜBERTRAG DER KUNDENAUFTRAGSNUMMER aus prozessliste
