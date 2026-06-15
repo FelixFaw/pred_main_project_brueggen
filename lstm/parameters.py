@@ -1,9 +1,9 @@
 # parameters.py
 
 # Pfad zu den Prozessdaten (Datei 1)
-FILE_PATH_PROCESS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\M200310_processdata_2024_2026.csv"
+FILE_PATH_PROCESS = r"C:\Users\louis\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\M200310_processdata_bereinigt_2024_206_gesamt.csv"
 # Pfad zu den MTA-Aufschreibungen / Ausfällen (Datei 2)
-FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\data\processed\lstm_ready_data.csv"
+FILE_PATH_FAULTS = r"C:\Users\louis\PycharmProjects\pred_main_project_brueggen\data\lstm ready data\aufschreibung_mta_clean_gesamt_v10_mit_fehlenden_zeitfenstern.csv"
 
 # --- Training Configuration ---
 #num_features = 14
@@ -25,7 +25,7 @@ FILE_PATH_FAULTS = r"C:\Users\tanne\PycharmProjects\pred_main_project_brueggen\d
 # --- Training Configuration (Optimiert für stabile Konvergenz) ---
 # --- Training Configuration (Vergrößert für komplexe Zeitreihenmuster) ---
 num_features = 14
-SEQ_LENGTH = 12
+SEQ_LENGTH = 24
 lstm_1_units = 32       # Zurückgefahren für weniger Overfitting-Kapazität
 dropout_1 = 0.3         # Erhöht
 lstm_2_units = 64       # Zurückgefahren
@@ -33,7 +33,7 @@ dropout_2 = 0.3         # Erhöht
 dense_units = 32
 LEARNING_RATE = 0.001  # Niedrigere Lernrate für extrem stabiles, sanftes Sinken des Loss
 BATCH_SIZE = 32
-EPOCHS = 10
+EPOCHS = 30
 TEST_SPLIT = 0.20
 best_threshold = 0.32
 
