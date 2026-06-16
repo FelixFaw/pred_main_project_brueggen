@@ -11,15 +11,14 @@ df = pd.read_excel(file_path)
 # 2. Features und Targets definieren
 # Wir trennen numerische Features (für den Scaler) und kategorische Features
 numeric_features = [
-    'Wochentag', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4',
-    'Menge i. O. L5',  'Dauer Org-Mangel', 'MengeGesamtNIO',
-    'Dauer Anlagen-Ausfall', 'Störung aufgrund Vormaterial',
-    'Dauer Anlagen-Ausfall intern', 'Dauer Logistik- Defizite',
-    'Sollzeit/ Stück (Min)', 'Takt Gesamt', 'Zeit_von_min', 'Zeit_bis_min', 'Datum'
+'Datum', 'KW', 'Jahr', 'Monat', 'Tag', 'Wochentag', 'Quartal', 'Zeit von', 'Zeit bis',
+'Dauer Arbeitszeit', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4', 'Menge i. O. L5', 'MengeGesamtNIO',
+'Dauer Org-Mangel', 'Dauer Anlagen-Ausfall', 'Störung aufgrund Vormaterial', 'Dauer Anlagen-Ausfall intern',
+'Dauer Logistik- Defizite', 'Anzahl/ Std.', 'Sollzeit/ Stück (Min)', 'Zeit_von_min', 'Zeit_bis_min',
+ 'Anzahl Störfälle Zeitfenster', 'Störfall'
 ]
-#'Menge Gesamt (Stück)',
 
-categorical_features = ['Schicht', 'Station/ OP']
+categorical_features = ['Schicht','Station/ OP_raw', 'Station/ OP_2', 'Station/ OP_1', 'Bemerkung_norm',]
 
 # Namen der Zielspalten in deiner Excel (bitte bei Bedarf exakt abgleichen!)
 col_failure_duration = 'Dauer Anlagen-Ausfall'
