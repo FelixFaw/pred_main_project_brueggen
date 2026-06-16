@@ -18,7 +18,7 @@ def load_and_preprocess_data_all_features():
     print("Lade Daten und wende strikte Feature-Trennung (Predictive Maintenance) an...")
 
     # 1. Daten einlesen
-    df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=',', encoding='utf-8')
+    df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=';', encoding='utf-8')
 
     # --- 2. ZEITSTEMPEL RUNDEN & REINIGEN ---
     df_faults = df_faults.dropna(subset=[p.DT_FAULTS, 'Zeit von'])

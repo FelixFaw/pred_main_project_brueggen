@@ -22,7 +22,7 @@ LEARNING_RATE = 0.001
 BATCH_SIZE = 32
 EPOCHS = 22
 TEST_SPLIT = 0.20
-best_threshold = 0.4835
+best_threshold = 0.549
 
 
 # ZIELVARIABLEN (Targets)
@@ -38,16 +38,17 @@ NUMERIC_FEATURES = [
     'Jahr', 'Quartal', 'Monat', 'KW', 'Wochentag', 'Tag',
     'Zeit_von_min', 'Zeit_bis_min',
     'Dauer Arbeitszeit', 'Anzahl MA', 'Menge N.i. O.', 'Menge i. O. L4',
-    'Menge i. O. L5', 'MengeGesamtNIO', 'Anzahl/ Std.', 'Sollzeit/ Stück (Min)',
-    'Dauer Org-Mangel', 'Dauer Logistik- Defizite', 'Anzahl Störfälle Zeitfenster'
+    'Menge i. O. L5', 'MengeGesamtNIO', 'Anzahl/ Std.', 'Sollzeit/ Stück (Min)', 'Stoerfall_7d_mean', 'Stoerfall_30d_mean', 'Avg_Time_To_Failure_min', 'last_fail_time' 
+    'Dauer Org-Mangel', 'Dauer Logistik- Defizite', 'Anzahl Störfälle Zeitfenster', 'Zeit_seit_letztem_Fehler_min'
 ]
 
 # KATEGORIALE FEATURES
 #  via One-Hot-Encoding umgewandelt
 CATEGORICAL_FEATURES = [
+    'Wochenende (J/N)',
     'Schicht',
     'Materialnummer',
-    'Kundenauftragsnummer'
+    #'Kundenauftragsnummer'
    # 'Station/ OP_raw',
   #  'Station/ OP_1',
    # 'Station/ OP_2',
