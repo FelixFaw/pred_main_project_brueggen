@@ -4,13 +4,11 @@ import pandas as pd
 import numpy as np
 import warnings
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.regularizers import l2
-import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import backend as K
 from lime import lime_tabular
 import shap
 
@@ -155,28 +153,6 @@ def plot_training_history(history):
     plt.savefig(r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\trainingshistory.png')
     plt.close()
 
-
-def weighted_binary_crossentropy():
-    """
-    Benutzerdefinierte Loss-Funktion für unbalancierte binäre Daten.
-    pos_weight: Gewicht für die Fehlerklasse (1 / Failure)
-    neg_weight: Gewicht für den Normalbetrieb (0 / No Failure)
-    """
-
-    def loss(y_true, y_pred):
-        # Datentypen anpassen und Werte clippen, um log(0) - Fehler zu vermeiden
-        y_true = tf.cast(y_true, tf.float32)
-        y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
-
-        # Mathematische Berechnung der gewichteten Kreuzentropie
-        bin_los_1 = y_true * K.log(y_pred) * p.POS_WEIGHT
-        bin_los_0 = (1.0 - y_true) * K.log(1.0 - y_pred) * p.NEG_WEIGHT
-
-        return -K.mean(bin_los_1 + bin_los_0, axis=-1)
-
-    return loss
-
-
 def build_predictive_maintenance_model(input_shape):
     inputs = Input(shape=input_shape, name="Feature_Input")
 
@@ -284,7 +260,9 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
     feature_importances = {}
     for i, feature_name in enumerate(feature_cols):
         X_test_shuffled = X_test.copy()
-        np.random.shuffle(X_test_shuffled[:, :, i])
+        # Für das Feature 'i' die Zuordnung über die Samples hinweg vertauschen
+        shuffled_idx = np.random.permutation(len(X_test))
+        X_test_shuffled[:, :, i] = X_test_shuffled[shuffled_idx, :, i]
 
         shuffled_preds = (model.predict(X_test_shuffled, verbose=0) > 0.5).astype(int).flatten()
         shuffled_acc = np.mean(shuffled_preds == y_when_test)

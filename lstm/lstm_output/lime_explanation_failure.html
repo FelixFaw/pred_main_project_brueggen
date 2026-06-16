@@ -37089,25 +37089,25 @@
 /***/ })
 /******/ ]);
 //# sourceMappingURL=bundle.js.map </script></head><body>
-        <div class="lime top_div" id="top_divMQ8FR9Q9YO2JMSZ"></div>
+        <div class="lime top_div" id="top_divLYFGXE3POLXCTJD"></div>
         
         <script>
-        var top_div = d3.select('#top_divMQ8FR9Q9YO2JMSZ').classed('lime top_div', true);
+        var top_div = d3.select('#top_divLYFGXE3POLXCTJD').classed('lime top_div', true);
         
             var pp_div = top_div.append('div')
                                 .classed('lime predict_proba', true);
             var pp_svg = pp_div.append('svg').style('width', '100%');
-            var pp = new lime.PredictProba(pp_svg, ["No Failure", "Failure"], [0.7083501815795898, 0.29164984822273254]);
+            var pp = new lime.PredictProba(pp_svg, ["No Failure", "Failure"], [0.6131730079650879, 0.3868270218372345]);
             
         
         var exp_div;
             var exp = new lime.Explanation(["No Failure", "Failure"]);
         
                 exp_div = top_div.append('div').classed('lime explanation', true);
-                exp.show([["Anzahl_Ausfaelle (t-3) <= 0.00", -0.03466930184374786], ["Anzahl_Ausfaelle (t-2) <= 0.00", -0.034327065676191676], ["Anzahl_Ausfaelle (t-4) <= 0.00", -0.03198498430230958], ["Anzahl_Ausfaelle (t-1) <= 0.00", -0.029135419732553194], ["Anzahl_Ausfaelle (t-5) <= 0.00", -0.028655368632926642], ["Anzahl_Ausfaelle (t-6) <= 0.00", -0.021866360526603745], ["Anzahl_Ausfaelle (t-0) <= 0.00", -0.017036180068836268], ["Anzahl_Ausfaelle (t-7) <= 0.00", -0.016444931495115438], ["Ausfaelle_Schwankung_3h (t-3) <= 0.00", 0.013844773223794191], ["Ausfaelle_Schwankung_3h (t-2) <= 0.00", 0.01370500222678551], ["Ausfaelle_Schwankung_3h (t-4) <= 0.00", 0.012451321249780503], ["Anzahl_Ausfaelle (t-8) <= 0.00", -0.012167376255283477], ["Ausfaelle_Schwankung_3h (t-5) <= 0.00", 0.011211818331978119], ["Ausfaelle_Schwankung_3h (t-6) <= 0.00", 0.010709454597505354]], 1, exp_div);
+                exp.show([["Dauer Org-Mangel (t-12) <= 0.00", -0.04461614889716973], ["Schicht_t (t-22) <= 0.00", 0.03923830649849628], ["Schicht_t (t-17) <= 0.00", 0.03714738028098801], ["Menge N.i. O. (t-2) <= 0.00", -0.0358482871214998], ["Dauer Logistik- Defizite (t-1) <= 0.00", -0.027118185139184577], ["Dauer Org-Mangel (t-3) <= 0.00", -0.023611382075055108], ["Menge N.i. O. (t-10) <= 0.00", -0.023187355540415653], ["Schicht_t (t-13) <= 0.00", -0.02268413716997183], ["Schicht_t (t-16) <= 0.00", 0.02255489538989503], ["Schicht_t (t-1) <= 0.00", 0.022469601209531086], ["Schicht_t (t-7) <= 0.00", -0.0186724599843916], ["Quartal (t-3) > 0.67", 0.018059008455371013], ["Quartal (t-5) > 0.67", 0.017714438969391896], ["Dauer Org-Mangel (t-13) <= 0.00", -0.01680446774318036], ["Menge N.i. O. (t-6) <= 0.00", 0.016091127257896732], ["Quartal (t-4) > 0.67", 0.01607089725998969], ["Menge N.i. O. (t-12) <= 0.00", -0.015550853208400262], ["Quartal (t-2) > 0.67", 0.01548069248131774], ["Sollzeit/ Stück (Min) (t-4) <= 0.00", -0.012305588343106397], ["Anzahl/ Std. (t-16) <= 0.00", 0.009785016637824741], ["Menge N.i. O. (t-1) <= 0.00", -0.00947563345097178], ["Dauer Logistik- Defizite (t-13) <= 0.00", -0.006850000333680882], ["Menge N.i. O. (t-21) <= 0.00", -0.0010828503353244843]], 1, exp_div);
                 
         var raw_div = top_div.append('div');
-            exp.show_raw_tabular([["Anzahl_Ausfaelle (t-3)", "0.00", -0.03466930184374786], ["Anzahl_Ausfaelle (t-2)", "0.00", -0.034327065676191676], ["Anzahl_Ausfaelle (t-4)", "0.00", -0.03198498430230958], ["Anzahl_Ausfaelle (t-1)", "0.00", -0.029135419732553194], ["Anzahl_Ausfaelle (t-5)", "0.00", -0.028655368632926642], ["Anzahl_Ausfaelle (t-6)", "0.00", -0.021866360526603745], ["Anzahl_Ausfaelle (t-0)", "0.00", -0.017036180068836268], ["Anzahl_Ausfaelle (t-7)", "0.00", -0.016444931495115438], ["Ausfaelle_Schwankung_3h (t-3)", "0.00", 0.013844773223794191], ["Ausfaelle_Schwankung_3h (t-2)", "0.00", 0.01370500222678551], ["Ausfaelle_Schwankung_3h (t-4)", "0.00", 0.012451321249780503], ["Anzahl_Ausfaelle (t-8)", "0.00", -0.012167376255283477], ["Ausfaelle_Schwankung_3h (t-5)", "0.00", 0.011211818331978119], ["Ausfaelle_Schwankung_3h (t-6)", "0.00", 0.010709454597505354]], 1, raw_div);
+            exp.show_raw_tabular([["Dauer Org-Mangel (t-12)", "0.00", -0.04461614889716973], ["Schicht_t (t-22)", "0.00", 0.03923830649849628], ["Schicht_t (t-17)", "0.00", 0.03714738028098801], ["Menge N.i. O. (t-2)", "0.00", -0.0358482871214998], ["Dauer Logistik- Defizite (t-1)", "0.00", -0.027118185139184577], ["Dauer Org-Mangel (t-3)", "0.00", -0.023611382075055108], ["Menge N.i. O. (t-10)", "0.00", -0.023187355540415653], ["Schicht_t (t-13)", "0.00", -0.02268413716997183], ["Schicht_t (t-16)", "0.00", 0.02255489538989503], ["Schicht_t (t-1)", "0.00", 0.022469601209531086], ["Schicht_t (t-7)", "0.00", -0.0186724599843916], ["Quartal (t-3)", "1.00", 0.018059008455371013], ["Quartal (t-5)", "1.00", 0.017714438969391896], ["Dauer Org-Mangel (t-13)", "0.00", -0.01680446774318036], ["Menge N.i. O. (t-6)", "0.00", 0.016091127257896732], ["Quartal (t-4)", "1.00", 0.01607089725998969], ["Menge N.i. O. (t-12)", "0.00", -0.015550853208400262], ["Quartal (t-2)", "1.00", 0.01548069248131774], ["Sollzeit/ Stück (Min) (t-4)", "0.00", -0.012305588343106397], ["Anzahl/ Std. (t-16)", "0.00", 0.009785016637824741], ["Menge N.i. O. (t-1)", "0.00", -0.00947563345097178], ["Dauer Logistik- Defizite (t-13)", "0.00", -0.006850000333680882], ["Menge N.i. O. (t-21)", "0.00", -0.0010828503353244843]], 1, raw_div);
         
         </script>
         </body></html>

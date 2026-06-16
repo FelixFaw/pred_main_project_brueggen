@@ -1,16 +1,13 @@
-# helping_functions.py
-
 import pandas as pd
 import numpy as np
 import warnings
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler, LabelEncoder
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.regularizers import l2
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import backend as K
 from lime import lime_tabular
 import shap
 
@@ -18,54 +15,73 @@ import parameters as p
 
 
 def load_and_preprocess_data_all_features():
-    print("Lade Daten und generiere hoch-informative Trend-Features (NUR FAULTS-LISTE)...")
+    print("Lade Daten und wende strikte Feature-Trennung (Predictive Maintenance) an...")
 
-    # Prozessdaten werden nicht mehr geladen
+    # 1. Daten einlesen
     df_faults = pd.read_csv(p.FILE_PATH_FAULTS, sep=',', encoding='utf-8')
 
-    # --- 1. ZEITSTEMPEL RUNDEN (AUSFALLDATEN) ---
-    df_faults = df_faults.dropna(subset=['Datum', 'Zeit von'])
+    # --- 2. ZEITSTEMPEL RUNDEN & REINIGEN ---
+    df_faults = df_faults.dropna(subset=[p.DT_FAULTS, 'Zeit von'])
     df_faults['merge_date'] = pd.to_datetime(
-        df_faults['Datum'].astype(str).str.strip() + ' ' + df_faults['Zeit von'].astype(str).str.strip(),
+        df_faults[p.DT_FAULTS].astype(str).str.strip() + ' ' + df_faults['Zeit von'].astype(str).str.strip(),
         format='mixed', errors='coerce'
     ).dt.floor('h')
     df_faults = df_faults.dropna(subset=['merge_date'])
 
-    # --- 2. AUSFALLDATEN AGGREGRIEREN & FEATURES GENERIEREN ---
-    # Wir fügen 'Anzahl_Ausfaelle' hinzu, damit das Modell ein Eingabe-Feature hat
-    df_faults_hourly = df_faults.groupby('merge_date').agg(
-        Dauer_Anlagen_Ausfall=('Dauer Anlagen-Ausfall', 'sum'),
-        Anzahl_Ausfaelle=('Dauer Anlagen-Ausfall', 'count')
-    ).reset_index()
+    # --- 3. STRIKTE FEATURE-AUSWAHL VIA PARAMETERS.PY ---
+    num_cols = [c for c in p.NUMERIC_FEATURES if c in df_faults.columns]
+    cat_cols = [c for c in p.CATEGORICAL_FEATURES if c in df_faults.columns]
+    target_cols = [c for c in p.TARGETS if c in df_faults.columns]
 
-    df_faults_hourly = df_faults_hourly.sort_values('merge_date').reset_index(drop=True)
+    for col in num_cols + target_cols:
+        df_faults[col] = pd.to_numeric(df_faults[col], errors='coerce').fillna(0)
 
-    # Trend-Features basierend auf den Ausfällen generieren
-    df_faults_hourly['Ausfaelle_Schwankung_3h'] = df_faults_hourly['Anzahl_Ausfaelle'].rolling(window=3, min_periods=1).std().fillna(0)
-    df_faults_hourly['Ausfaelle_Schwankung_6h'] = df_faults_hourly['Anzahl_Ausfaelle'].rolling(window=6, min_periods=1).std().fillna(0)
+    if cat_cols:
+        df_faults = pd.get_dummies(df_faults, columns=cat_cols, drop_first=True, dtype=int)
+        dummy_cols = [c for c in df_faults.columns if any(c.startswith(orig_cat) for orig_cat in cat_cols)]
+    else:
+        dummy_cols = []
 
-    # --- 3. DATENTYP-GEWÄHRLEISTUNG ---
-    df_faults_hourly['merge_date'] = pd.to_datetime(df_faults_hourly['merge_date'])
+    # --- 4. DYNAMISCHE STÜNDLICHE AGGREGATION (GROUPBY) ---
+    agg_dict = {}
+    for col in num_cols + dummy_cols + target_cols:
+        if any(keyword in col for keyword in ['Dauer', 'Menge', 'Anzahl', 'Schicht_', 'Station/', 'Bemerkung_']):
+            agg_dict[col] = 'sum'
+        else:
+            agg_dict[col] = 'mean'
 
-    # Kein Merge mehr nötig: df besteht rein aus den aggregierten Faults-Daten
-    df = df_faults_hourly.copy()
+    df_hourly = df_faults.groupby('merge_date').agg(agg_dict).reset_index()
+    df_hourly = df_hourly.sort_values('merge_date').reset_index(drop=True)
 
-    df['Dauer_Anlagen_Ausfall'] = df['Dauer_Anlagen_Ausfall'].fillna(0)
-    is_failure = (df['Dauer_Anlagen_Ausfall'] > 0).astype(int)
+    # --- 5. TREND-FEATURES GENERIEREN ---
+    if 'Anzahl Störfälle Zeitfenster' in df_hourly.columns:
+        base_trend_col = 'Anzahl Störfälle Zeitfenster'
+    else:
+        df_hourly['Anzahl_Ausfaelle'] = 1
+        base_trend_col = 'Anzahl_Ausfaelle'
 
-    # Wichtige Kontroll-Ausgaben im Terminal
-    print(f"-> Anzahl verbleibender Ausfallstunden in der Faults-Matrix: {is_failure.sum()}")
-    print(f"Stündliche Daten Matrix Form (Nur Faults): {df.shape}")
+    df_hourly['Ausfaelle_Schwankung_3h'] = df_hourly[base_trend_col].rolling(window=3, min_periods=1).std().fillna(0)
+    df_hourly['Ausfaelle_Schwankung_6h'] = df_hourly[base_trend_col].rolling(window=6, min_periods=1).std().fillna(0)
 
+    # --- 6. TARGET ISOLIEREN & MATRIX FINALS_FORMEN ---
+    df = df_hourly.copy()
+
+    is_failure = (df[p.TARGET_DURATION] > 0).astype(int)
+
+    print(f"-> Anzahl verbleibender Ausfallstunden nach Aggregation: {is_failure.sum()}")
     timestamps = df['merge_date'].dt.strftime('%Y-%m-%d %H:%M:%S').values
 
-    # Features isolieren (merge_date und das Vorhersageziel fliegen raus)
-    feature_cols = [c for c in df.columns if c not in ['merge_date', 'Dauer_Anlagen_Ausfall']]
+    feature_cols = [c for c in df.columns if c not in ['merge_date'] + p.TARGETS]
+    print(f"Stündliche Daten Matrix Form (X-Features): {len(feature_cols)} Spalten")
 
-    # Skalierung
+    # --- 7. DATEN SKALIEREN (OHNE DATA LEAKAGE) ---
+    train_size = int(len(df) * (1 - p.TEST_SPLIT))
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(df[feature_cols])
 
+    scaler.fit(df.iloc[:train_size][feature_cols])
+    scaled_data = scaler.transform(df[feature_cols])
+
+    # --- 8. FINALEN DATAFRAME BAUEN ---
     df_final = pd.DataFrame(scaled_data, columns=feature_cols)
     df_final['is_failure'] = is_failure.values
 
@@ -111,19 +127,6 @@ def plot_training_history(history):
     plt.tight_layout()
     plt.savefig(r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\trainingshistory.png')
     plt.close()
-
-
-def weighted_binary_crossentropy():
-    def loss(y_true, y_pred):
-        y_true = tf.cast(y_true, tf.float32)
-        y_pred = K.clip(y_pred, K.epsilon(), 1.0 - K.epsilon())
-
-        bin_los_1 = y_true * K.log(y_pred) * p.POS_WEIGHT
-        bin_los_0 = (1.0 - y_true) * K.log(1.0 - y_pred) * p.NEG_WEIGHT
-
-        return -K.mean(bin_los_1 + bin_los_0, axis=-1)
-
-    return loss
 
 
 def build_predictive_maintenance_model(input_shape):
@@ -181,10 +184,11 @@ def generate_lime_explanation(model, X_train, X_test, y_when_test, feature_cols,
         exp = explainer.explain_instance(
             data_row=instance_3d.reshape(-1),
             predict_fn=lime_predict_wrapper,
-            num_features=p.num_features,
+            num_features=num_features,
             labels=(1,)
         )
-        exp.save_to_file(r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\lime_explanation_failure.html')
+        exp.save_to_file(
+            r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\lime_explanation_failure.html')
     else:
         print("Note: No machine failures were found in the test dataset for LIME.")
 
@@ -217,7 +221,8 @@ def generate_shap_explanation(model, X_train, X_test, y_when_test, feature_cols)
             plt.figure(figsize=(1, 3))
             shap.summary_plot(shap_values_2d, test_samples_2d, feature_names=feature_cols, show=False)
             plt.tight_layout()
-            plt.savefig(r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\shap_summary_plot.png')
+            plt.savefig(
+                r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\shap_summary_plot.png')
             plt.close()
         else:
             print("Note: No machine failures were found in the test dataset for SHAP.")
@@ -231,7 +236,8 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
     feature_importances = {}
     for i, feature_name in enumerate(feature_cols):
         X_test_shuffled = X_test.copy()
-        np.random.shuffle(X_test_shuffled[:, :, i])
+        shuffled_idx = np.random.permutation(len(X_test_shuffled))
+        X_test_shuffled[:, :, i] = X_test_shuffled[shuffled_idx, :, i]
 
         shuffled_preds = (model.predict(X_test_shuffled, verbose=0) > 0.5).astype(int).flatten()
         shuffled_acc = np.mean(shuffled_preds == y_when_test)
@@ -247,5 +253,6 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
     plt.title("Permutation Feature Importance (Global)")
     plt.grid(axis='x', linestyle='--')
     plt.tight_layout()
-    plt.savefig(r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\permutation_importance.png')
+    plt.savefig(
+        r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm\lstm_output\permutation_importance.png')
     plt.close()
