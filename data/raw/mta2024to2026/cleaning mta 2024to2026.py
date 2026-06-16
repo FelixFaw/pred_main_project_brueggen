@@ -10,10 +10,9 @@ fehlt #entfernen : fehlercode (nur einmal was drinnen stehend)
 
 fehlt #syn daten:
 
-    #Zeit in Stunden nach Schichtbeginn
-    #Tag, Monat, Woche, Quartal, Jahr
-    #Wochenende , kein Wochenende
-    # Monatsanfang/-ende
+    #Zeit in Stunden nach Schichtbeginn - beginnt 4:45 und dann delta bis zeit_von
+done     #Tag, Monat, Woche, Quartal, Jahr
+    #Wochenende J/N , kein Wochenende -anhand des datums checken
     #Zeit seit letztem Fehler GLOBAL
     #Zeit seit letzter Wartung GLOBAL
     # boolean Ausfall/kein Ausfall
@@ -23,6 +22,7 @@ fehlt #syn daten:
     #wie viele produkte wurden angefertigt seit letztem Ausfall GLOBAL
     #wie viele Produkte NIO seit letzten Ausfall
     #gleitende Mittelwerte der Fehlerhäufigkeit (Rolling Mean über zb 7 oder 30 Tage, ich würde vmtl auf woche UND monat das ausgeben einmal)
+        #
 
 
     #Idee : Sequenzmuster aus der Maschinenreihenfolge erstellen
