@@ -7,6 +7,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l2
 from sklearn.utils.class_weight import compute_class_weight
 import keras_tuner as kt
 import numpy as np
@@ -32,14 +33,17 @@ class LSTMTimeSeriesTuner(kt.RandomSearch):
         current_seq_length = hp.get('seq_length')
         p.SEQ_LENGTH = current_seq_length
 
-        # 2. Daten dynamisch schneiden
-        X, y_when, seq_timestamps = hf.create_sequences_multivar(df, feature_cols, timestamps)
+        # 2. Daten dynamisch schneiden (Angepasst für das neue Output-Format inkl. y_dur)
+        X, y_when, seq_timestamps, y_dur = hf.create_sequences_multivar(df, feature_cols, timestamps)
 
         # WICHTIG: Strikte chronologische Sortierung
         sort_idx = np.argsort(seq_timestamps)
         X = X[sort_idx]
         y_when = y_when[sort_idx]
         seq_timestamps = seq_timestamps[sort_idx]
+        # (y_dur muss hier nicht zwingend sortiert werden, da der Tuner die Tabelle nicht printet,
+        # aber wir machen es der Vollständigkeit halber)
+        y_dur = y_dur[sort_idx]
 
         # 3. Chronologischer Split (Die letzten 20% für den unberührten Test)
         split_idx = int(len(X) * (1 - p.TEST_SPLIT))
@@ -77,17 +81,20 @@ def build_ultimate_tuning_model(hp):
     # 'seq_length' wird hier definiert/registriert
     current_seq_length = hp.Int('seq_length', min_value=12, max_value=48, step=12)
 
+    # L2 Regularisierung hinzufügen (Tuning-Option)
+    hp_l2_rate = hp.Choice('l2_rate', values=[1e-2, 1e-3, 1e-4])
+
     inputs = Input(shape=(current_seq_length, num_features), name="Feature_Input")
 
     # Suchraum für das Modell
     hp_lstm_1 = hp.Int('lstm_1_units', min_value=16, max_value=128, step=16)
-    x = LSTM(units=hp_lstm_1, return_sequences=True)(inputs)
+    x = LSTM(units=hp_lstm_1, return_sequences=True, kernel_regularizer=l2(hp_l2_rate))(inputs)
 
     hp_dropout_1 = hp.Float('dropout_1', min_value=0.1, max_value=0.5, step=0.1)
     x = Dropout(rate=hp_dropout_1)(x)
 
     hp_lstm_2 = hp.Int('lstm_2_units', min_value=16, max_value=64, step=16)
-    x = LSTM(units=hp_lstm_2, return_sequences=False)(x)
+    x = LSTM(units=hp_lstm_2, return_sequences=False, kernel_regularizer=l2(hp_l2_rate))(x)
 
     hp_dropout_2 = hp.Float('dropout_2', min_value=0.1, max_value=0.5, step=0.1)
     x = Dropout(rate=hp_dropout_2)(x)
@@ -95,7 +102,7 @@ def build_ultimate_tuning_model(hp):
     x = BatchNormalization()(x)
 
     hp_dense_units = hp.Int('dense_units', min_value=16, max_value=64, step=16)
-    dense_when = Dense(units=hp_dense_units, activation='relu', name='Dense_When')(x)
+    dense_when = Dense(units=hp_dense_units, activation='relu', name='Dense_When', kernel_regularizer=l2(hp_l2_rate))(x)
     dense_when = BatchNormalization()(dense_when)
 
     outputs = Dense(1, activation='sigmoid', name='When_Failure')(dense_when)
@@ -111,7 +118,7 @@ def build_ultimate_tuning_model(hp):
     model.compile(
         optimizer=Adam(learning_rate=hp_learning_rate),
         loss='binary_crossentropy',
-        metrics=['accuracy'] # PR_AUC entfernt, da rein auf Accuracy fokussiert wird
+        metrics=['accuracy', tf.keras.metrics.AUC(name='auc', curve='ROC')]
     )
     return model
 
@@ -122,7 +129,8 @@ def build_ultimate_tuning_model(hp):
 if __name__ == "__main__":
     print("1. Loading and preprocessing base dataframe...")
     try:
-        df, scaler, feature_cols, timestamps = hf.load_and_preprocess_data_all_features()
+        # Angepasst für 5 Rückgabewerte (inkl. mean_duration)
+        df, scaler, feature_cols, timestamps, mean_duration = hf.load_and_preprocess_data_all_features()
     except Exception as e:
         print(f"Error loading files: {e}")
         exit()
@@ -136,21 +144,21 @@ if __name__ == "__main__":
     tuner = LSTMTimeSeriesTuner(
         hypermodel=build_ultimate_tuning_model,
         hyperparameters=hp,
-        objective=kt.Objective("val_accuracy", direction="max"), # GEÄNDERT: Tuner sucht nach der höchsten Validation Accuracy
-        max_trials=20,
+        objective=kt.Objective("val_auc", direction="max"),
+        max_trials=30,  # Leicht erhöht für den neuen L2-Parameter
         directory=r'C:\Users\louis\PycharmProjects\pred_main_project_brueggen\lstm',
-        project_name='lstm_tuning_accuracy' # Name leicht geändert für einen sauberen, neuen Cache
+        project_name='lstm_tuning_auc_v2'
     )
 
     # Early Stopping Callback definieren
     early_stopping = tf.keras.callbacks.EarlyStopping(
-        monitor='val_accuracy', # GEÄNDERT: Bricht ab, wenn die Accuracy nicht mehr steigt
+        monitor='val_auc',
         mode='max',
-        patience=5,
+        patience=8,  # Leicht erhöht, da L2 Regularisierung manchmal etwas länger braucht, um sich einzupendeln
         restore_best_weights=True
     )
 
-    print("\n--- Starting Hyperparameter Search (Optimizing for Accuracy) ---")
+    print("\n--- Starting Hyperparameter Search (Optimizing for ROC-AUC) ---")
     tuner.search(
         df=df,
         feature_cols=feature_cols,
@@ -165,7 +173,7 @@ if __name__ == "__main__":
 
     # Beste Hyperparameter ausgeben
     best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
-    print("\nBeste Parameter (nach höchster Accuracy) gefunden:")
+    print("\nBeste Parameter (nach höchstem ROC-AUC) gefunden:")
     print(f"- Sequence Length: {best_hps.get('seq_length')}")
     print(f"- LSTM 1 Units: {best_hps.get('lstm_1_units')}")
     print(f"- Dropout 1: {best_hps.get('dropout_1')}")
@@ -174,4 +182,5 @@ if __name__ == "__main__":
     print(f"- Dense Units: {best_hps.get('dense_units')}")
     print(f"- Batch Size: {best_hps.get('batch_size')}")
     print(f"- Learning Rate: {best_hps.get('learning_rate')}")
+    print(f"- L2 Regularization Rate: {best_hps.get('l2_rate')}")
     print(f"- Failure Class Multiplier: {best_hps.get('failure_multiplier')}")
