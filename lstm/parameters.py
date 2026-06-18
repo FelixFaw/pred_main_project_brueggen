@@ -42,7 +42,7 @@ TARGETS = [
 NUMERIC_FEATURES = [
     # --- Die echten Prozess-Treiber ---
     'Wochentag',  # Rhythmus der Woche (z.B. Montags-Anlauf-Probleme)
-    'Zeit_bis_min',  # Wo in der Schicht/im Auftrag befinden wir uns?
+    #'Zeit_bis_min',  # Wo in der Schicht/im Auftrag befinden wir uns?
     'Dauer Arbeitszeit',  # Wie lange läuft die Maschine schon?
     'Menge i. O. L4',  # Konkreter Output
     'MengeGesamtNIO',  # Ausschuss (sehr wichtiges Warnsignal für Verschleiß!)

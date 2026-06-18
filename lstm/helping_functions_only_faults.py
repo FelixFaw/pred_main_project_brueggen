@@ -63,7 +63,6 @@ def load_and_preprocess_data_all_features():
     df.drop(columns=['Ausfaelle_Schwankung_6h', 'Ausfaelle_Schwankung_3h', 'Anzahl_Ausfaelle',
                      'Anzahl Störfälle Zeitfenster'], errors='ignore', inplace=True)
 
-    print(f"-> Anzahl verbleibender Ausfallstunden nach Aggregation: {is_failure.sum()}")
     timestamps = df['merge_date'].dt.strftime('%Y-%m-%d %H:%M:%S').values
 
     feature_cols = [c for c in df.columns if c not in ['merge_date'] + p.TARGETS]
