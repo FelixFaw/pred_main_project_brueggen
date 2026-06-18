@@ -1,20 +1,23 @@
 # main.py
 import os
-
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import random
 import tensorflow as tf
 import numpy as np
+np.random.seed(42)
+tf.random.set_seed(42)
+random.seed(42)
+
 from sklearn.metrics import classification_report
 from sklearn.utils.class_weight import compute_class_weight
 
 import parameters as p
 import helping_functions_only_faults as hf
 
-np.random.seed(42)
-tf.random.set_seed(42)
-random.seed(42)
+
+
 
 if __name__ == "__main__":
     # =========================================================================
@@ -38,7 +41,7 @@ if __name__ == "__main__":
     X = X[sort_idx]
     y_when = y_when[sort_idx]
     seq_timestamps = seq_timestamps[sort_idx]
-    y_dur = y_dur[sort_idx]  # Echte Dauer sortieren
+    y_dur = y_dur[sort_idx]
 
     # Chronologischer Split
     total_samples = len(X)
@@ -50,7 +53,7 @@ if __name__ == "__main__":
     X_test = X[split_index:]
     y_when_test = y_when[split_index:]
     seq_timestamps_test = seq_timestamps[split_index:]
-    y_dur_test = y_dur[split_index:]  # Dauer fürs Testset trennen
+    y_dur_test = y_dur[split_index:]
 
     print("3. Computing class weights to counteract data imbalance...")
     classes = np.unique(y_when_train)
@@ -87,12 +90,12 @@ if __name__ == "__main__":
     print("\n--- 7a. MODEL EVALUATION (THRESHOLD EVALUATION) ---")
     predictions = model.predict(X_test).flatten()
 
-    # Berechne die ROC-Kurve und den automatischen Optimalwert im Hintergrund
+    # Berechnet ROC-Kurve und den automatischen Optimalwert für den Threshold
     auto_threshold, roc_auc_score = hf.optimize_threshold_and_plot_roc(y_when_test, predictions)
     print(f"\n>>> Maximal erzielter ROC-AUC Score im Testset: {roc_auc_score:.4f} <<<")
     print(f"-> Mathematisch bester Schwellenwert (Youden-Index): {auto_threshold * 100:.2f}%")
 
-    # Logik zur flexiblen Threshold-Auswahl
+    # flexible Thresholdauswahl
     if p.MANUAL_THRESHOLD is not None:
         chosen_threshold = p.MANUAL_THRESHOLD
         print(f"\n[INFO] NUTZE MANUELLEN SCHWELLENWERT: {chosen_threshold * 100:.1f}%")
@@ -106,7 +109,7 @@ if __name__ == "__main__":
                                 target_names=["No Failure", "Failure"], zero_division=0))
 
     # =========================================================================
-    # --- 7b. PRAXISBEISPIELE: VORHERSAGE VS. REALITÄT (BEGRENZT AUF 20) ---
+    # --- 7b. PRAXISBEISPIELE: VORHERSAGE VS. REALITÄT ---
     # =========================================================================
     print("\n--- 7b. PRAXISBEISPIELE: VORHERSAGE VS. REALITÄT (STICHPROBE VON 20 STUNDEN) ---")
 
@@ -125,21 +128,22 @@ if __name__ == "__main__":
     sample_indices = sorted(sample_indices)
 
     if len(sample_indices) > 0:
-        # Einmalige Info vor der Tabelle
+        # Info vor der Tabelle tatsächliche Durchschnittsdauer aus den Daten ermittelt
         print(f"\n[INFO] Die historische Durchschnittsdauer eines Ausfalls beträgt ca. {mean_duration:.0f} Minuten.")
         print("Dieser Wert dient als statistischer Richtwert und wird nicht dynamisch vorhergesagt.\n")
 
-        # Verschlankter Header
+        # Header der Ausgabetabelle mit den Ausfallwahrscheinlichkeiten
         header_format = "{:<20} | {:<16} | {:<16} | {:<15} | {:<15}"
         print(header_format.format("Zeitpunkt", "Modell: Ausfall?", "Real: Ausfall?", "Real: Dauer", "Sicherheit"))
         print("-" * 90)
 
+        #Inhalt der Tabelle
         for idx in sample_indices:
             date_val = str(seq_timestamps_test[idx])
             fail_probability = float(predictions[idx])
             actual_dur = y_dur_test[idx]
 
-            # Klassifikation ohne angehängte Schätzung
+
             if fail_probability > chosen_threshold:
                 pred_when_str = "Ja (Ausfall)"
                 confidence = fail_probability * 100
@@ -156,6 +160,6 @@ if __name__ == "__main__":
     else:
         print("Es gab in den Testdaten keine auswertbaren Vorhersagen.")
     # =========================================================================
-    # Explainable AI (XAI) Methods
+    # XAI
     # =========================================================================
     hf.calculate_permutation_importance(model, X_test, y_when_test, feature_cols)

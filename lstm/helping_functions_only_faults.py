@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import warnings
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import roc_curve,roc_auc_score, auc as sklearn_auc
@@ -59,7 +58,7 @@ def load_and_preprocess_data_all_features():
     df = df_hourly.copy()
     is_failure = (df[p.TARGET_DURATION] > 0).astype(int)
 
-    # Zombie-Features entfernen, da sie keinen Mehrwert bringen
+    # Features entfernen, da sie keinen Mehrwert bringen (Quelle: Permutation Ergebnis)
     df.drop(columns=['Ausfaelle_Schwankung_6h', 'Ausfaelle_Schwankung_3h', 'Anzahl_Ausfaelle',
                      'Anzahl Störfälle Zeitfenster'], errors='ignore', inplace=True)
 
@@ -76,32 +75,32 @@ def load_and_preprocess_data_all_features():
     df_final = pd.DataFrame(scaled_data, columns=feature_cols)
     df_final['is_failure'] = is_failure.values
 
-    # NEU: Reale Ausfalldauer für das spätere Testset speichern
+    # Reale Ausfalldauer für das Testset speichern
     df_final['actual_duration'] = df[p.TARGET_DURATION].values
 
-    # NEU: Historischen Durchschnitt für die rein informative Schätzung berechnen
+    # Durchschnitt Ausfalldauer für informative Schätzung berechnen in der Outputtabelle
     mean_duration = df[df[p.TARGET_DURATION] > 0][p.TARGET_DURATION].mean()
 
     return df_final, scaler, feature_cols, timestamps, mean_duration
 
 def create_sequences_multivar(df, feature_cols, timestamps):
-    X, y, seq_t, y_dur = [], [], [], []  # y_dur NEU
+    X, y, seq_t, y_dur = [], [], [], []
     feature_data = df[feature_cols].values
     target_data = df['is_failure'].values
-    duration_data = df['actual_duration'].values  # NEU
+    duration_data = df['actual_duration'].values
     PREDICTION_WINDOW = 2
 
     for i in range(len(df) - p.SEQ_LENGTH - PREDICTION_WINDOW + 1):
         X.append(feature_data[i: i + p.SEQ_LENGTH])
         window_targets = target_data[i + p.SEQ_LENGTH: i + p.SEQ_LENGTH + PREDICTION_WINDOW]
-        window_durs = duration_data[i + p.SEQ_LENGTH: i + p.SEQ_LENGTH + PREDICTION_WINDOW]  # NEU
+        window_durs = duration_data[i + p.SEQ_LENGTH: i + p.SEQ_LENGTH + PREDICTION_WINDOW]
 
         if np.any(window_targets == 1):
             y.append(1)
         else:
             y.append(0)
 
-        y_dur.append(np.sum(window_durs))  # Echte Dauer aufsummieren
+        y_dur.append(np.sum(window_durs))
         seq_t.append(timestamps[i + p.SEQ_LENGTH - 1])
 
     return np.array(X), np.array(y), np.array(seq_t), np.array(y_dur)
@@ -160,14 +159,13 @@ def build_predictive_maintenance_model(input_shape):
 
 def optimize_threshold_and_plot_roc(y_true, y_probs):
     """
-    Berechnet die ROC-Kurve, bestimmt den mathematisch besten Schwellenwert
-    mittels Youden-Index und speichert den Plot ab.
+    Berechnet die ROC-Kurve, bestimmt besten Schwellenwert für
+    Youden-Index und speichert Plot ab
     """
     fpr, tpr, thresholds = roc_curve(y_true, y_probs)
     roc_auc = sklearn_auc(fpr, tpr)
 
     # Youden-Index: J = True Positive Rate - False Positive Rate
-    # Wir suchen das Maximum, um den besten Kompromiss aus Sensitivität und Spezifität zu finden
     j_scores = tpr - fpr
     best_idx = np.argmax(j_scores)
     best_threshold = thresholds[best_idx]
@@ -195,11 +193,10 @@ def optimize_threshold_and_plot_roc(y_true, y_probs):
 def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
     print("\n--- 10. Starting Permutation Feature Importance (AUC-basiert) ---")
 
-    # 1. Baseline Wahrscheinlichkeiten (nicht Klassen!) und Baseline AUC berechnen
     baseline_probs = model.predict(X_test, verbose=0).flatten()
     baseline_auc = roc_auc_score(y_when_test, baseline_probs)
 
-    # 2. Features gruppieren (Zusammenfassen von One-Hot-Encodings)
+    # Features gruppieren (Zusammenfassen von One-Hot-Encodings), da sonst hunderte Features in Permutations PNG
     feature_groups = {}
     for i, col in enumerate(feature_cols):
         group_assigned = False
@@ -214,7 +211,7 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
             feature_groups[col] = [i]
 
     feature_importances = {}
-    # 3. Permutation auf Gruppenbasis
+    # Permutation auf Gruppenbasis
     for group_name, indices in feature_groups.items():
         X_test_shuffled = X_test.copy()
         shuffled_idx = np.random.permutation(len(X_test_shuffled))
@@ -222,11 +219,11 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
         for i in indices:
             X_test_shuffled[:, :, i] = X_test_shuffled[shuffled_idx, :, i]
 
-        # 4. AUC mit gemischten Daten berechnen
+        # AUC mit gemischten Daten berechnen
         shuffled_probs = model.predict(X_test_shuffled, verbose=0).flatten()
         shuffled_auc = roc_auc_score(y_when_test, shuffled_probs)
 
-        # 5. Differenz ist jetzt der AUC-Drop (wie viel schlechter wird das Modell?)
+        # wie viel schlechter wird das Modell mit Feature XY
         feature_importances[group_name] = baseline_auc - shuffled_auc
 
     sorted_importances = sorted(feature_importances.items(), key=lambda x: x[1], reverse=False)
@@ -236,7 +233,7 @@ def calculate_permutation_importance(model, X_test, y_when_test, feature_cols):
     plot_height = max(5, len(features_sorted) * 0.4)
     plt.figure(figsize=(8, plot_height))
     plt.barh(features_sorted, importances_sorted, color='skyblue')
-    plt.xlabel("Abfall im ROC-AUC (Importance)")  # Label angepasst!
+    plt.xlabel("Abfall im ROC-AUC (Importance)")
     plt.title("Permutation Feature Importance (Gruppiert, AUC-Drop)")
     plt.grid(axis='x', linestyle='--')
     plt.tight_layout()
